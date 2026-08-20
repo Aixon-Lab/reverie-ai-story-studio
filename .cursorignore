@@ -1,0 +1,23 @@
+# ============================================================
+# Hide from Cursor / AI indexing only (still on disk for you).
+# Do NOT list drop-zone, backup, docs, or .claude here —
+# those stay gitignored but agent-visible.
+# server/defaults/ is product package content — leave it visible.
+# ============================================================
+
+# User private runtime data (app imports, chats, settings, personal presets)
+data/
+data/**
+
+# Secrets
+**/secrets.json
+.env
+.env.*
+
+# Heavy / irrelevant to agents
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Dogfood / personal QA dumps (may include chat screenshots)
+dogfood-output/

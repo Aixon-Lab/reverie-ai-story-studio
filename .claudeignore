@@ -1,0 +1,16 @@
+# ============================================================
+# Claude Code: do not load private user data into context.
+# drop-zone, backup, docs remain readable (gitignored only).
+# server/defaults/ is product package content — leave it visible.
+# ============================================================
+
+# User private runtime data (app imports, chats, settings, personal presets)
+data/
+data/**
+**/secrets.json
+.env
+.env.*
+node_modules/
+dist/
+dogfood-output/
+*.tsbuildinfo

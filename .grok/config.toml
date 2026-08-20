@@ -1,0 +1,38 @@
+# Reverie — project-scoped Grok permissions
+# Grok does NOT read .cursorignore / .claudeignore.
+# Deny private runtime data under data/; leave server/defaults/ and docs/,
+# backup/, drop-zone/ agent-visible (package + local design notes).
+# Rules load at session start — restart Grok after editing.
+
+[permission]
+deny = [
+  # All user runtime data written by the app (never package seeds)
+  "Read(data)",
+  "Read(data/**)",
+  "Edit(data)",
+  "Edit(data/**)",
+  "Write(data)",
+  "Write(data/**)",
+  "Grep(data)",
+  "Grep(data/**)",
+  # Secrets & env
+  "Read(**/secrets.json)",
+  "Edit(**/secrets.json)",
+  "Write(**/secrets.json)",
+  "Grep(**/secrets.json)",
+  "Read(.env)",
+  "Read(.env.*)",
+  "Edit(.env)",
+  "Edit(.env.*)",
+  "Write(.env)",
+  "Write(.env.*)",
+  # Personal QA dumps
+  "Read(dogfood-output)",
+  "Read(dogfood-output/**)",
+  "Edit(dogfood-output)",
+  "Edit(dogfood-output/**)",
+  "Write(dogfood-output)",
+  "Write(dogfood-output/**)",
+  "Grep(dogfood-output)",
+  "Grep(dogfood-output/**)",
+]

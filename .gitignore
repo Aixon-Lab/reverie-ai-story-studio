@@ -1,0 +1,57 @@
+# ============================================================
+# Reverie git ignore
+# Private / local / agent-workspace material stays off GitHub.
+# AI agents can still read non-data folders unless listed in
+# .cursorignore / .claudeignore / .grok/config.toml (see those files).
+#
+# APP RUNTIME  → data/              (never publish)
+# PRODUCT SEED → server/defaults/   (tracked — do not ignore)
+# ============================================================
+
+# --- Provisioned on first run, never committed ---
+# The on-device vision engine (llama.cpp, ~46 MB) and its weights (~1.6 GB).
+# The app fetches these into its own folder so nothing has to be installed.
+models/
+runtime/
+
+# --- Never publish (user data & secrets) ---
+# Everything the running app writes: imports, chats, avatars, characters,
+# groups, settings, personas, secrets, and personal presets.
+data/
+data/**
+**/secrets.json
+.env
+.env.*
+!.env.example
+
+# --- Local workspace (agents may still read these) ---
+drop-zone/
+backup/
+.claude/
+docs/
+Resources/
+dogfood-output/
+
+# --- Build & dependencies ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# --- Logs & OS junk ---
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Editor / IDE (keep project settings if you add them later) ---
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Optional local overrides ---
+*.local
+.local/

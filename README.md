@@ -1,60 +1,99 @@
-<p align="center">
-  <img src="public/logo-standalone.png" alt="Reverie" width="112" height="112" />
-</p>
-
-<h1 align="center">Reverie</h1>
+<h1 align="center">
+  <img src="public/readme-wordmark.png" alt="Reverie" width="320" />
+</h1>
 
 <p align="center">
-  <strong>Local-first AI story studio</strong><br />
+  <strong>Local AI Story Studio</strong><br />
   Characters with <em>real minds</em> · Director-led ensembles · Stories that remember
 </p>
 
 <p align="center">
-  <img src="public/readme-hero.jpg" alt="Reverie chat — play-as, portrait float, Write Me / Impersonate / Narrator" width="920" />
+  <img src="public/readme-hero.jpg" alt="Reverie — play-as, portrait float, Write Me / Impersonate / Narrator" width="920" />
 </p>
 
 <p align="center">
-  <a href="#-quick-start"><img src="https://img.shields.io/badge/⚡_start-30_seconds-d8ff3e?style=for-the-badge&labelColor=0a0a0a" alt="Start" /></a>
-  <a href="#-character-brain"><img src="https://img.shields.io/badge/🧠_brain-living_memory-ffffff?style=for-the-badge&labelColor=0a0a0a" alt="Brain" /></a>
-  <a href="#-privacy"><img src="https://img.shields.io/badge/🔒_data-local_only-8a8a8a?style=for-the-badge&labelColor=0a0a0a" alt="Local" /></a>
-</p>
-
-<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/start-30_seconds-d8ff3e?style=flat-square&labelColor=0a0a0a" alt="Quick start" /></a>
+  &nbsp;
+  <a href="#character-brain"><img src="https://img.shields.io/badge/brain-living_memory-ffffff?style=flat-square&labelColor=0a0a0a" alt="Character Brain" /></a>
+  &nbsp;
+  <a href="#privacy"><img src="https://img.shields.io/badge/data-on_your_disk-8a8a8a?style=flat-square&labelColor=0a0a0a" alt="Local data" /></a>
+  &nbsp;
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/Vite_6-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TS" />
-  <img src="https://img.shields.io/badge/Express_5-000000?style=flat-square&logo=express&logoColor=white" alt="Express" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/BYOK-OpenAI_·_Claude_·_Gemini_·_OpenRouter-0a0a0a?style=flat-square" alt="BYOK" />
 </p>
 
----
+A cinematic **Analogue Noir** studio for long-form AI stories: cards, lore, presets, and a **Character Brain** grounded in cognitive science — memory, psyche, and theory of mind.
 
-**Reverie** is a modern AI story studio: a cinematic **Analogue Noir** UI, a full card/lore/preset engine, and a **Character Brain** grounded in cognitive science — memory, psyche, and theory of mind.
+Bring your own models. Import cards and lore. Direct the cast. Every file stays on *your* disk.
 
-Bring your own models. Import cards & lore. Direct the cast. Keep every file on *your* disk.
+> Inspired by [SillyTavern](https://github.com/SillyTavern/SillyTavern) — rebuilt from zero for ensembles, long stories, and minds that change.
 
-> Inspired by [SillyTavern](https://github.com/SillyTavern/SillyTavern) — rebuilt from zero for long-form stories, group ensembles, and minds that change.
-
----
-
-## ✨ Why people switch
-
-| | Feature | What you get |
-|:-:|---|---|
-| 🧠 | **Character Brain** | Living memory + psyche + theory of mind — not a chat summary |
-| 🎬 | **AI Director** | Picks who speaks next from *context* — cast, Narrator, or *you* |
-| 🎭 | **Play as anyone** | Occupy a seat mid-scene; the AI never writes your character |
-| ✍️ | **Write Me · Impersonate · Narrator** | Draft your line, take a character’s turn, or cut to the world |
-| 📘 | **Skills** | Global craft docs (fights, reads, trades…) that characters can draw on |
-| 👁 | **On-device vision** | Portraits described locally; images never leave the machine |
-| 🌱 | **Genesis** | Scene needs a stranger? Full V3 card + style-matched avatar |
-| 🌿 | **Timeline forks** | Branch mid-chat, deep-swipe history, restore without new chats |
-| 🎨 | **Image Director** | Structured art prompts + group style profiles |
-| 🔒 | **Local-first** | Plain files under `data/` — no account, no cloud lock-in. OpenRouter calls force ZDR / no data collection |
+<p align="center">
+  <a href="#quick-start">Start</a>
+  ·
+  <a href="#why-reverie">Features</a>
+  ·
+  <a href="#character-brain">Brain</a>
+  ·
+  <a href="#groups--director">Director</a>
+  ·
+  <a href="#story-engine">Engine</a>
+  ·
+  <a href="#privacy">Privacy</a>
+</p>
 
 ---
 
-## 🧠 Character Brain
+## Quick start
+
+**Need:** Node.js **20+** and a text-model API key.
+
+**Windows** — double-click **`Start.bat`** → [http://localhost:5173](http://localhost:5173)
+
+**Any OS**
+
+```bash
+npm install
+npm run dev          # API :6969 · UI :5173
+```
+
+1. Open the **API** drawer → pick a provider and paste a key  
+2. Drop a character card (`.png` / `.json`) on the shelf  
+3. Chat — turn on **Brain** when you want minds that grow  
+
+```bash
+npm run build && npm start    # UI + API together on :6969
+```
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Server + Vite |
+| `npm run build` | Typecheck + client |
+| `npm start` | Express serves `dist/` |
+| `npm test` | Engine + brain tests |
+
+---
+
+## Why Reverie
+
+| | |
+|---|---|
+| **Character Brain** | Living memory + psyche + theory of mind — not a chat summary |
+| **AI Director** | Picks who speaks next from *context* — cast, Narrator, or *you* |
+| **Play as anyone** | Occupy a seat mid-scene; the AI never writes your character |
+| **Write Me · Impersonate · Narrator** | Draft your line, take a character’s turn, or cut to the world |
+| **Skills** | Global craft docs (fights, reads, trades…) characters can draw on |
+| **On-device vision** | Portraits described locally; images never leave the machine |
+| **Genesis** | Scene needs a stranger? Full V3 card + style-matched avatar |
+| **Timeline forks** | Branch mid-chat, deep-swipe history, restore without new chats |
+| **Image Director** | Structured art prompts + group style profiles |
+| **Local files** | Plain files under `data/` — no account, no cloud lock-in. OpenRouter calls force ZDR / no data collection |
+
+---
+
+## Character Brain
 
 > Each character carries a **mind**, not a sticky note.
 
@@ -86,7 +125,7 @@ One brain per `(chat × character)`. Same card, different chat → different per
 
 ---
 
-## 🎬 Groups & Director
+## Groups & Director
 
 | Mode | How turns work |
 |---|---|
@@ -100,7 +139,7 @@ One brain per `(chat × character)`. Same card, different chat → different per
 
 ---
 
-## 💬 Story engine
+## Story engine
 
 | Area | Capabilities |
 |---|---|
@@ -115,7 +154,7 @@ One brain per `(chat × character)`. Same card, different chat → different per
 
 ---
 
-## 🎨 Images & studio
+## Images & studio
 
 - Separate **Image API** from text (Google / OpenAI / OpenRouter / fal / Replicate / custom)
 - **Image Director** → subject · action · setting · light · style
@@ -126,17 +165,18 @@ One brain per `(chat × character)`. Same card, different chat → different per
 
 ---
 
-## 🔌 Connections
+## Connections
 
 **Text:** OpenAI · Anthropic · Google · OpenRouter · any OpenAI-compatible proxy  
 **Image:** Nano Banana / Gemini image · GPT Image · Seedream · FLUX · more  
-Utility / cheap models for background work (memory, director, proofread) so the main model stays on the reply.
 
-Keys stay in local `secrets`. OpenRouter traffic is forced through **ZDR** (`data_collection: deny`) — nothing is routed to an endpoint that retains prompts.
+Utility / cheap models handle background work (memory, director, proofread) so the main model stays on the reply.
+
+Keys live in local `secrets`. OpenRouter traffic is forced through **ZDR** (`data_collection: deny`) — nothing is routed to an endpoint that retains prompts.
 
 ---
 
-## 🖥️ UX that stays in the chat
+## UX that stays in the chat
 
 Drawers, not page hops: **API · Presets · Format · Library · Lore · Skills · Memory · Security · Terminal**.
 
@@ -152,38 +192,7 @@ Portrait float · soft reveal · optional local STT · Windows **`Start.bat`**.
 
 ---
 
-## ⚡ Quick start
-
-**Need:** Node.js **20+** · a text model API key
-
-### Windows
-Double-click **`Start.bat`** → [http://localhost:5173](http://localhost:5173)
-
-### Any OS
-
-```bash
-npm install
-npm run dev          # API :6969 · UI :5173
-```
-
-1. **API** drawer → provider + key  
-2. Drop a character card (`.png` / `.json`) on the shelf  
-3. Chat — turn on **Brain** when you want minds that grow  
-
-```bash
-npm run build && npm start    # UI + API on :6969
-```
-
-| Script | |
-|---|---|
-| `npm run dev` | Server + Vite |
-| `npm run build` | Typecheck + client |
-| `npm start` | Express serves `dist/` |
-| `npm test` | Engine + brain tests |
-
----
-
-## 🏗️ Layout
+## Layout
 
 ```
 Reverie/
@@ -204,7 +213,7 @@ First run copies `server/defaults/` → empty `data/` folders. After that, the a
 
 ---
 
-## 🔒 Privacy
+## Privacy
 
 | How it got there | Where | GitHub? |
 |---|---|:---:|
@@ -216,7 +225,7 @@ First run copies `server/defaults/` → empty `data/` folders. After that, the a
 
 ---
 
-## 📜 License
+## License
 
 See the repo for license terms. Model APIs are yours — BYOK, their policies apply.
 
@@ -224,5 +233,5 @@ See the repo for license terms. Model APIs are yours — BYOK, their policies ap
 
 <p align="center">
   <strong>Build worlds. Direct the cast. Let them remember.</strong><br />
-  <sub>Reverie · local minds, cinematic stories</sub>
+  <sub>Local AI Story Studio</sub>
 </p>

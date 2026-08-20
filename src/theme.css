@@ -2427,11 +2427,8 @@ label { cursor: default; }
     0 8px 20px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .member-add-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: min(300px, 78vw);
-  max-height: min(360px, 55vh);
+  /* Portaled to document.body; top/left/width/max-height are set inline. */
+  position: fixed;
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -2439,13 +2436,8 @@ label { cursor: default; }
   background: color-mix(in srgb, var(--surface-0) 94%, #000 6%);
   backdrop-filter: blur(16px);
   box-shadow: var(--shadow-float, 0 18px 44px rgba(0, 0, 0, 0.5));
-  z-index: 50;
+  z-index: 120;
   overflow: hidden;
-}
-.member-strip.is-dense .member-add-popover,
-.member-strip.is-add-only .member-add-popover {
-  left: auto;
-  right: 0;
 }
 .header-cast-add {
   display: flex;
@@ -2461,6 +2453,7 @@ label { cursor: default; }
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
 }
 .member-add-search-icon {
   color: var(--ink-muted);
@@ -2480,7 +2473,8 @@ label { cursor: default; }
 .member-add-list {
   overflow-y: auto;
   padding: 6px;
-  max-height: 280px;
+  min-height: 0;
+  flex: 1;
 }
 .member-add-empty {
   padding: 16px 12px;

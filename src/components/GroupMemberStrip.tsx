@@ -1,7 +1,8 @@
 /** ST-style group cast strip: member portraits + a trailing "+" to add more.
  *  Click + → searchable picker of platform characters not already in the cast.
  *  Always refreshes the character library when the picker opens. */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Plus, Search, X } from 'lucide-react';
 import type { CharacterCard } from '@shared/types';
@@ -10,6 +11,50 @@ import { Avatar } from './Avatar';
 import { GlobeLoader } from './GlobeLoader';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+const POPOVER_WIDTH = 300;
+const POPOVER_MAX_H = 360;
+const POPOVER_GAP = 8;
+const POPOVER_PAD = 8;
+
+type PopoverPos = {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+  origin: string;
+};
+
+function placeAddPopover(anchor: HTMLElement, preferRight: boolean): PopoverPos {
+  const r = anchor.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const width = Math.min(POPOVER_WIDTH, Math.max(200, vw - POPOVER_PAD * 2));
+  let left = preferRight ? r.right - width : r.left;
+  left = Math.max(POPOVER_PAD, Math.min(left, vw - width - POPOVER_PAD));
+
+  const spaceBelow = vh - r.bottom - POPOVER_GAP - POPOVER_PAD;
+  const spaceAbove = r.top - POPOVER_GAP - POPOVER_PAD;
+  const openDown = spaceBelow >= 160 || spaceBelow >= spaceAbove;
+  const maxHeight = Math.max(140, Math.min(POPOVER_MAX_H, vh * 0.55, openDown ? spaceBelow : spaceAbove));
+
+  if (openDown) {
+    return {
+      top: r.bottom + POPOVER_GAP,
+      left,
+      width,
+      maxHeight,
+      origin: preferRight ? 'top right' : 'top left',
+    };
+  }
+  return {
+    bottom: vh - r.top + POPOVER_GAP,
+    left,
+    width,
+    maxHeight,
+    origin: preferRight ? 'bottom right' : 'bottom left',
+  };
+}
 
 export function GroupMemberStrip({
   members,
@@ -50,9 +95,24 @@ export function GroupMemberStrip({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [loadingPool, setLoadingPool] = useState(false);
+  const [pos, setPos] = useState<PopoverPos | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+  const preferRight = dense || addOnly;
+
+  const closePicker = useCallback(() => {
+    setOpen(false);
+    setQ('');
+  }, []);
+
+  const updatePos = useCallback(() => {
+    const btn = addBtnRef.current;
+    if (!btn) return;
+    setPos(placeAddPopover(btn, preferRight));
+  }, [preferRight]);
 
   /** Prefer live store, fall back to / merge with prop pool so imports always appear */
   const livePool = useMemo(() => {
@@ -74,6 +134,8 @@ export function GroupMemberStrip({
   }, [livePool, memberIds, q]);
 
   async function openPicker() {
+    const btn = addBtnRef.current;
+    if (btn) setPos(placeAddPopover(btn, preferRight));
     setOpen(true);
     setLoadingPool(true);
     try {
@@ -87,27 +149,29 @@ export function GroupMemberStrip({
 
   useEffect(() => {
     if (!open) return;
+    updatePos();
     const t = requestAnimationFrame(() => searchRef.current?.focus());
     const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQ('');
-      }
+      const node = e.target as Node;
+      if (rootRef.current?.contains(node) || popoverRef.current?.contains(node)) return;
+      closePicker();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        setQ('');
-      }
+      if (e.key === 'Escape') closePicker();
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', updatePos);
+    // Capture so a scroll in header-cast-stack / rail still repositions.
+    window.addEventListener('scroll', updatePos, true);
     return () => {
       cancelAnimationFrame(t);
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
     };
-  }, [open]);
+  }, [open, closePicker, updatePos]);
 
   const overlap = dense ? -12 : -10;
   const addSize = size;
@@ -164,6 +228,7 @@ export function GroupMemberStrip({
           style={{ marginLeft: !addOnly && members.length ? (dense ? 4 : 6) : 0 }}
         >
           <button
+            ref={addBtnRef}
             type="button"
             className={`member-strip-add${open ? ' is-open' : ''}`}
             style={{ width: addSize, height: addSize }}
@@ -172,20 +237,22 @@ export function GroupMemberStrip({
             aria-expanded={open}
             aria-haspopup="dialog"
             onClick={() => {
-              if (open) {
-                setOpen(false);
-                setQ('');
-              } else {
-                void openPicker();
-              }
+              if (open) closePicker();
+              else void openPicker();
             }}
           >
             <Plus size={Math.round(addSize * 0.42)} strokeWidth={2.25} />
           </button>
+        </div>
+      </div>
 
+      {typeof document !== 'undefined' &&
+        createPortal(
           <AnimatePresence>
-            {open && (
+            {open && pos && (
               <motion.div
+                key="member-add-popover"
+                ref={popoverRef}
                 className="member-add-popover"
                 role="dialog"
                 aria-label="Add group member"
@@ -193,6 +260,14 @@ export function GroupMemberStrip({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -6, scale: 0.98 }}
                 transition={{ duration: 0.18, ease: EASE }}
+                style={{
+                  top: pos.top,
+                  bottom: pos.bottom,
+                  left: pos.left,
+                  width: pos.width,
+                  maxHeight: pos.maxHeight,
+                  transformOrigin: pos.origin,
+                }}
               >
                 <div className="member-add-search">
                   <Search size={14} className="member-add-search-icon" />
@@ -225,8 +300,7 @@ export function GroupMemberStrip({
                         className="member-add-row"
                         onClick={() => {
                           void onAdd(c);
-                          setOpen(false);
-                          setQ('');
+                          closePicker();
                         }}
                       >
                         <Avatar src={c.avatar} name={c.name} size={32} shape="square" interactive={false} />
@@ -245,9 +319,9 @@ export function GroupMemberStrip({
                 </div>
               </motion.div>
             )}
-          </AnimatePresence>
-        </div>
-      </div>
+          </AnimatePresence>,
+          document.body,
+        )}
     </div>
   );
 }

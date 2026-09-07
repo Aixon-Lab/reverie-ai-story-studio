@@ -13,6 +13,7 @@ import { brainRoutes } from './routes/brain';
 import { startBrainSweeper } from './brain/sweeper';
 import { terminal } from './routes/terminal';
 import { skillRoutes } from './routes/skills';
+import { assistant } from './routes/assistant';
 
 const PORT = Number(process.env.PORT || 6969);
 /** Pin to IPv4 loopback so Vite's proxy (127.0.0.1) never hits a dead ::1 race on Windows. */
@@ -53,6 +54,7 @@ app.use('/api', timelineRoutes);
 app.use('/api', brainRoutes);
 app.use('/api', generate);
 app.use('/api', skillRoutes);
+app.use('/api', assistant);
 app.use('/api', terminal);
 
 // production static build

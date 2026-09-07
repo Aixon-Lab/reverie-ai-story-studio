@@ -5271,3 +5271,318 @@ label { cursor: default; }
   0%, 100% { opacity: 0.32; }
   50% { opacity: 0.88; }
 }
+
+/* ---------- Reverie desk (dock + edge orb + popup) ---------- */
+
+.reverie-dock {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px dashed var(--hairline);
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+  transition:
+    border-color var(--ease-micro),
+    background-color var(--ease-micro),
+    box-shadow var(--ease-micro);
+}
+.reverie-dock.is-occupied {
+  border-color: transparent;
+}
+.reverie-dock.is-empty {
+  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--surface-glass) 80%, transparent);
+}
+.reverie-dock.is-hot {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--hairline));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.reverie-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  pointer-events: none;
+}
+.reverie-layer .reverie-orb,
+.reverie-layer .reverie-desk,
+.reverie-layer .reverie-orb-ghost {
+  pointer-events: auto;
+}
+
+.reverie-orb {
+  position: fixed;
+  z-index: 85;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  cursor: grab;
+  color: var(--ink);
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+.reverie-orb.is-dragging { cursor: grabbing; z-index: 86; }
+.reverie-orb.is-docked { cursor: pointer; }
+.reverie-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--hairline-strong);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.16), transparent 42%),
+    linear-gradient(160deg, rgba(18,18,18,0.95), rgba(6,6,6,0.92));
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+  pointer-events: none;
+  transition:
+    border-color var(--ease-micro),
+    box-shadow var(--ease-layout);
+}
+.reverie-orb:hover .reverie-orb-ring,
+.reverie-orb.is-open .reverie-orb-ring {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline-strong));
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.16);
+}
+.reverie-orb.is-docked .reverie-orb-ring {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  background: color-mix(in srgb, var(--surface-0) 70%, #000 30%);
+  border-color: var(--hairline);
+}
+.reverie-orb.is-live .reverie-orb-ring {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--hairline));
+  animation: reverie-live 1.6s ease-in-out infinite;
+}
+.reverie-orb-face {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+  pointer-events: none;
+}
+.reverie-orb-ghost {
+  position: fixed;
+  z-index: 84;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--hairline));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@keyframes reverie-live {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent), 0 10px 28px rgba(0,0,0,.45); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent), 0 10px 28px rgba(0,0,0,.45); }
+}
+
+.reverie-desk {
+  position: fixed;
+  z-index: 87;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  padding: 0;
+  border-radius: 18px;
+}
+.reverie-desk-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.reverie-desk-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface-glass) 100%, transparent);
+  border: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.reverie-desk-titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.1;
+}
+.reverie-desk-kicker {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.reverie-desk-name {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.reverie-desk-close { width: 28px; height: 28px; flex-shrink: 0; }
+.reverie-desk-log {
+  flex: 1;
+  min-height: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 14px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reverie-desk-empty {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reverie-desk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.reverie-chip {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: border-color var(--ease-micro), background-color var(--ease-micro);
+}
+.reverie-chip:hover {
+  border-color: var(--hairline-strong);
+  background: var(--surface-glass);
+}
+.reverie-msg {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 100%;
+}
+.reverie-msg-user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.reverie-msg-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+.reverie-msg-body {
+  font-size: 13.5px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: 8px 11px;
+  border-radius: 14px;
+  background: var(--surface-glass);
+  border: 1px solid var(--hairline);
+}
+.reverie-msg-user .reverie-msg-body {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.reverie-msg-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  padding: 0 4px;
+}
+.reverie-caret { color: var(--ink-faint); font-size: 12.5px; }
+.reverie-caret-blink {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 3px;
+  background: var(--accent);
+  vertical-align: -1px;
+  animation: reverie-caret 0.9s steps(1) infinite;
+}
+@keyframes reverie-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.reverie-desk-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.reverie-desk-input {
+  flex: 1;
+  min-height: 38px;
+  max-height: 96px;
+  resize: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline-strong);
+  border-radius: 0;
+  padding: 8px 2px;
+  outline: none;
+  transition: border-color var(--ease-micro);
+}
+.reverie-desk-input:focus { border-bottom-color: var(--accent); }
+.reverie-desk-input:disabled { opacity: 0.55; }
+.reverie-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: var(--ink);
+  color: var(--ink-inverse);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity var(--ease-micro), transform var(--ease-micro), background-color var(--ease-micro);
+}
+.reverie-send:disabled { opacity: 0.35; cursor: default; }
+.reverie-send:not(:disabled):hover { transform: scale(1.04); }
+.reverie-send.is-stop {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--hairline-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reverie-orb.is-live .reverie-orb-ring,
+  .reverie-caret-blink { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .reverie-desk { width: min(360px, calc(100vw - 16px)); }
+}

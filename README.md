@@ -50,13 +50,13 @@ Bring your own models. Import cards and lore. Direct the cast. Every file stays 
 
 **Need:** Node.js **20+** and a text-model API key.
 
-**Windows** — double-click **`Start.bat`** → [http://localhost:5173](http://localhost:5173)
+**Windows** — double-click **`Start.bat`** → opens the UI on [http://localhost:5173](http://localhost:5173), or the next free port if 5173 is taken.
 
 **Any OS**
 
 ```bash
 npm install
-npm run dev          # API :6969 · UI :5173
+npm run dev          # API :6969 · UI :5173 (or next free)
 ```
 
 1. Open the **API** drawer → pick a provider and paste a key  

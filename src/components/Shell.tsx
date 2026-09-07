@@ -7,6 +7,7 @@ import { api } from '../api';
 import { Avatar } from './Avatar';
 import { DrawerHost } from './drawers/DrawerHost';
 import { PortraitFloat } from './PortraitFloat';
+import { ReverieOrb } from './ReverieOrb';
 import { SoftReveal } from './SoftReveal';
 import {
   IconApi, IconCast, IconFormat, IconHome, IconPreset, IconSettings, IconWorld,
@@ -50,6 +51,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <PortraitFloat />
+      <ReverieOrb />
     </DrawerHost>
   );
 }
@@ -540,14 +542,15 @@ function RailRow({ label, sub, avatar, onClick, onDelete, active }: {
 /** Top bar: brand · you-as-character chip · model chip. Persona drawer opens from the chip. */
 function TopBar() {
   const { settings, secretKeys, personas, characters, toggleDrawer, openDrawer } = useApp();
-  if (!settings) return <header className="top-bar" />;
 
-  const hasKey =
+  const hasKey = !!(settings && (
     secretKeys.includes(`text.${settings.textConnection.provider}.apiKey`) ||
-    settings.textConnection.provider === 'custom';
+    settings.textConnection.provider === 'custom'
+  ));
 
-  const activePersona =
-    personas.find((p) => p.id === settings.activePersonaId) ?? personas[0];
+  const activePersona = settings
+    ? personas.find((p) => p.id === settings.activePersonaId) ?? personas[0]
+    : undefined;
   // Prefer portrait from matching library character when user “became” them
   const linkedChar = activePersona
     ? characters.find(
@@ -566,39 +569,50 @@ function TopBar() {
       <BrandLogo size="md" />
       <span style={{ flex: 1 }} />
 
-      <button
-        type="button"
-        className={`you-chip${personaOpen ? ' is-open' : ''}`}
-        onClick={() => toggleDrawer('persona')}
-        title={`Playing as ${youName} — click to switch who you are`}
-        aria-label={`Playing as ${youName}`}
-        aria-pressed={personaOpen}
-      >
-        <span className="you-chip-ring">
-          <Avatar
-            src={youAvatar}
-            name={youName}
-            characterId={youCharId}
-            size={28}
-            shape="square"
-            interactive={false}
-          />
-        </span>
-        <span className="you-chip-meta">
-          <span className="you-chip-kicker">Playing as</span>
-          <span className="you-chip-name">{youName}</span>
-        </span>
-      </button>
+      {settings && (
+        <button
+          type="button"
+          className={`you-chip${personaOpen ? ' is-open' : ''}`}
+          onClick={() => toggleDrawer('persona')}
+          title={`Playing as ${youName} — click to switch who you are`}
+          aria-label={`Playing as ${youName}`}
+          aria-pressed={personaOpen}
+        >
+          <span className="you-chip-ring">
+            <Avatar
+              src={youAvatar}
+              name={youName}
+              characterId={youCharId}
+              size={28}
+              shape="square"
+              interactive={false}
+            />
+          </span>
+          <span className="you-chip-meta">
+            <span className="you-chip-kicker">Playing as</span>
+            <span className="you-chip-name">{youName}</span>
+          </span>
+        </button>
+      )}
 
-      <button
-        type="button"
-        className="btn btn-secondary btn-sm model-chip"
-        onClick={() => toggleDrawer('api')}
-        title={hasKey ? 'Open API connection' : 'No API key set — open API'}
-      >
-        <span className="status-dot" data-ok={hasKey || undefined} />
-        {settings.textConnection.model.split('/').pop()}
-      </button>
+      <div
+        id="reverie-dock"
+        className="reverie-dock is-occupied"
+        title="Ask Reverie"
+        aria-hidden="true"
+      />
+
+      {settings && (
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm model-chip"
+          onClick={() => toggleDrawer('api')}
+          title={hasKey ? 'Open API connection' : 'No API key set — open API'}
+        >
+          <span className="status-dot" data-ok={hasKey || undefined} />
+          {settings.textConnection.model.split('/').pop()}
+        </button>
+      )}
     </header>
   );
 }

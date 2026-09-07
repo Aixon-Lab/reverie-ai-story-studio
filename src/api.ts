@@ -1136,3 +1136,106 @@ export function streamSkillDraft(
 
   return () => controller.abort();
 }
+
+/** Platform desk assistant — same text connection as chat, never posts into the story. */
+export function streamAssistant(
+  body: {
+    question: string;
+    chatId?: string;
+    history?: { role: 'user' | 'assistant'; content: string }[];
+  },
+  cb: {
+    onDelta: (text: string) => void;
+    onDone: (text: string) => void;
+    onError: (message: string) => void;
+    onAbort?: () => void;
+  },
+): () => void {
+  const controller = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let settled = false;
+
+  const settleAbort = () => {
+    if (settled) return;
+    settled = true;
+    cb.onAbort?.();
+  };
+  const settleError = (message: string) => {
+    if (settled) return;
+    settled = true;
+    cb.onError(message || 'The desk could not answer.');
+  };
+  const settleDone = (text: string) => {
+    if (settled) return;
+    settled = true;
+    cb.onDone(text);
+  };
+
+  (async () => {
+    try {
+      const res = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) {
+        settleAbort();
+        return;
+      }
+      if (!res.ok) {
+        if (res.status === 423) notifyVaultLocked();
+        throw new Error(await readFetchError(res));
+      }
+      if (!res.body) throw new Error('The server sent no response body.');
+      reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (!controller.signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        buffer = drainSseFrames(buffer, (frame) => {
+          if (settled) return;
+          const parsed = parseSseFrame(frame);
+          if (!parsed) return;
+          let data: any;
+          try { data = JSON.parse(parsed.data); } catch { return; }
+          if (parsed.event === 'delta' && data.text) cb.onDelta(data.text);
+          else if (parsed.event === 'done') settleDone(typeof data.text === 'string' ? data.text : '');
+          else if (parsed.event === 'error') settleError(data.message ?? 'The desk could not answer.');
+        });
+        if (settled) break;
+      }
+      if (controller.signal.aborted) {
+        settleAbort();
+        return;
+      }
+      if (!settled && buffer.trim()) {
+        const parsed = parseSseFrame(buffer);
+        if (parsed) {
+          try {
+            const data = JSON.parse(parsed.data);
+            if (parsed.event === 'done') settleDone(typeof data.text === 'string' ? data.text : '');
+            else if (parsed.event === 'error') settleError(data.message ?? 'The desk could not answer.');
+          } catch { /* ignore trailing junk */ }
+        }
+      }
+      if (!settled) settleError('The desk closed before finishing. Try again.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        settleAbort();
+        return;
+      }
+      settleError(err?.message || 'The desk could not answer.');
+    } finally {
+      try { reader?.releaseLock(); } catch { /* ignore */ }
+    }
+  })();
+
+  return () => {
+    try { reader?.cancel('user stopped'); } catch { /* ignore */ }
+    controller.abort();
+    if (!settled) settleAbort();
+  };
+}

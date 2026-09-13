@@ -11,6 +11,7 @@
 // compile time; keeping the two models in separate files is worth it because
 // memory and mind are genuinely different concerns.
 import type { PsycheState } from '../psyche/types';
+import type { BrainIndex } from './graph';
 import type { Distortion } from './reconstruction';
 import type { SynapticState } from './synapse';
 import type { GoalReview, Intention, SteeringDirective } from './volition';
@@ -141,6 +142,21 @@ export interface MemoryNode {
 
   /** Accumulated retrieval-induced suppression from competitors (§7.4). */
   suppressed: number;
+  /**
+   * Consolidation pass this trace was encoded on (`stats.updates` at the time).
+   *
+   * Drives engram maturation (`maturation.ts`). Absent on nodes written before
+   * the field existed, which is read as "fully settled" — correct, because they
+   * have been through every pass since.
+   */
+  encodedAtPass?: number;
+  /**
+   * Activation lost to near-twin memories blurring into this one
+   * (`interference.ts`). Recomputed offline on maintenance passes and left
+   * `undefined` when nothing is similar enough to interfere, so a graph of
+   * distinct memories carries neither the penalty nor the bytes.
+   */
+  interference?: number;
   lastRetrievedAt?: number;
   status: MemoryStatus;
 
@@ -414,6 +430,14 @@ export interface BrainStats {
   totalPruned: number;
   totalRecalls: number;
   updates: number;
+  /**
+   * Calibration of the character's own predictions about people
+   * (`forecast.ts`). Only forecasts the scene actually *tested* are counted, so
+   * a mind that never commits to anything scores nothing rather than scoring
+   * perfectly.
+   */
+  forecastsTested?: number;
+  forecastsHit?: number;
   lastUpdateAt?: number;
   /**
    * When the maintenance tail (verbatim fade, edge decay, drift, mood
@@ -540,6 +564,35 @@ export interface BrainState {
 
   config: BrainConfig;
   stats: BrainStats;
+  /**
+   * The prediction this mind is currently exposed on (`forecast.ts`). Formed
+   * before a turn, scored on the next consolidation pass, then spent.
+   */
+  forecast?: SceneForecast;
+  /** The last time the world went against what they expected. */
+  lastSurprise?: { note: string; surprise: number; at: number };
+}
+
+/**
+ * A structural, scorable expectation — never generated prose.
+ *
+ * Both axes are signed and continuous so they can be scored against quantities
+ * the appraisal already produces, rather than needing a matcher over labels.
+ */
+export interface SceneForecast {
+  /** Who the stance prediction is about. Absent when nobody is known well enough. */
+  target?: string;
+  /** -1 expects to be hurt … +1 expects to be treated well. */
+  stance: number;
+  /** 0..1 — how exposed they are on this call. Familiarity is what buys it. */
+  confidence: number;
+  /** -1..1 — whether they expect their own objective to advance. */
+  progress: number;
+  /** The intention this was predicted under, so a changed objective is visible. */
+  intentionId?: string;
+  madeAt: number;
+  /** Passes it may go untested before it lapses unscored. */
+  ttl: number;
 }
 
 // ---------- retrieval ----------
@@ -571,6 +624,16 @@ export interface ActivationBreakdown {
    * Exactly zero for a node with no synaptic history.
    */
   availability: number;
+  /**
+   * Blur from near-duplicate memories (`interference.ts`) — always ≤ 0, and
+   * exactly 0 for a memory with no near-twin.
+   */
+  interference: number;
+  /**
+   * Withheld from a trace that has not consolidated yet (`maturation.ts`) —
+   * always ≤ 0, and exactly 0 once settled.
+   */
+  maturation: number;
   total: number;
 }
 
@@ -588,6 +651,19 @@ export interface RecallResult {
   /** Same-cluster nodes that lost the competition — they get suppressed (§7.4). */
   competitors: string[];
   cue: RecallCue;
+  /**
+   * The cue index this recall ran against.
+   *
+   * Returned so the caller can hand it back to `applyRetrievalEffects` instead of
+   * letting the effects run without one. That is not an optimisation: the
+   * facilitation half of retrieval competition is guarded on having an index, so
+   * a caller that recalls and then applies effects separately silently loses
+   * priming altogether — remembering something made its neighbours harder to
+   * reach and nothing easier, which is the opposite of the intended behaviour.
+   *
+   * Not serialised: it is a derived view of `nodes` and `edges`, rebuilt on load.
+   */
+  index: BrainIndex;
 }
 
 // ---------- consolidation I/O ----------
@@ -653,4 +729,12 @@ export interface ConsolidationReport {
   /** What the goal curator changed, on maintenance passes. */
   goalReview?: GoalReview;
   at: number;
+  /** Nodes whose activation now carries blur from a near-twin (`interference.ts`). */
+  interfered?: number;
+  /**
+   * 0..1 — how far this stretch went against what the character predicted
+   * (`forecast.ts`). Absent when no prediction was standing, or when the scene
+   * never put the standing one to the test.
+   */
+  surprise?: number;
 }

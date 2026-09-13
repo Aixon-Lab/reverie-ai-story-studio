@@ -25,6 +25,48 @@ import type { BrainState, MemoryNode, RecallHit } from './types';
  */
 const SECTION_OVERHEAD = 320;
 
+/**
+ * How many memories per section are rendered in full before the rest are merely
+ * *named* (§3.3).
+ *
+ * The composer used to expand every hit that fitted the budget. With a 60-hit
+ * recall and a third of a large context to spend, that is up to sixty fully
+ * rendered memories in a single prompt — which is not what recall feels like and
+ * not something a model can use. Nobody has sixty memories present at once. They
+ * have a handful that are vivid and a *sense* of everything else within reach,
+ * and the feeling-of-knowing arrives before any of the content does.
+ *
+ * So the tail becomes a reach line instead. It costs a few words per memory
+ * rather than a full sentence, it tells the model the shape of what this
+ * character knows so it stops inventing around the gaps, and it leaves the
+ * budget for the few memories that are actually live.
+ */
+export const FULL_PER_SECTION = 8;
+
+/** Most memories the reach line will ever name. Beyond this it is noise. */
+const MAX_REACHABLE = 16;
+
+/** Longest a reach label may be before it is cut at a word boundary. */
+const REACH_LABEL_CHARS = 52;
+
+/**
+ * A memory reduced to something the character could reach for.
+ *
+ * Deliberately the gist's own opening rather than its tags: tags are affect
+ * words and retrieval cues, and a list of them reads as keyword soup. The first
+ * clause of the gist is what a person would actually say they were half
+ * thinking of.
+ */
+export function reachLabel(node: MemoryNode): string {
+  const gist = (node.gist ?? '').replace(/\s+/g, ' ').trim();
+  if (!gist) return '';
+  const clause = gist.split(/[.;:!?]/)[0].trim() || gist;
+  if (clause.length <= REACH_LABEL_CHARS) return lowerFirst(clause);
+  const cut = clause.slice(0, REACH_LABEL_CHARS);
+  const at = cut.lastIndexOf(' ');
+  return `${lowerFirst(at > 20 ? cut.slice(0, at) : cut)}…`;
+}
+
 export interface ComposeOptions {
   /** Hard token budget for the whole block (from planContext). */
   budget: number;
@@ -35,6 +77,12 @@ export interface ComposeOptions {
   countTokens?: (text: string) => number;
   /** Include the section headers explaining what the block is. Default true. */
   withHeader?: boolean;
+  /**
+   * How many memories are rendered *fully* before the rest become a reach line.
+   * See `FULL_PER_SECTION`. Exposed mainly so the inspector can show the
+   * difference; the default is the shipped behaviour.
+   */
+  fullPerSection?: number;
 }
 
 export interface ComposedBrain {
@@ -45,6 +93,14 @@ export interface ComposedBrain {
   sections: { name: string; tokens: number; count: number }[];
   /** Tokens the brain would have used with no budget at all. */
   demand: number;
+  /**
+   * Memories that cleared the retrieval threshold and were named in the reach
+   * line rather than rendered (§3.3). Not counted as retrieved: being on the tip
+   * of the tongue is not the same as having brought something to mind, and
+   * giving these a full retrieval trace would make every recall rehearse the
+   * entire graph.
+   */
+  reachedIds: string[];
 }
 
 export function composeBrainContext(
@@ -93,22 +149,46 @@ export function composeBrainContext(
    * would let a long formative-memory block fall out while a trivial later
    * section still fit — the exact opposite of how availability should work.
    */
+  /**
+   * Everything that cleared the threshold but was not rendered in full.
+   *
+   * Collected across sections so the reach line can be one honest list of what
+   * is within reach, rather than a stub at the end of each section.
+   */
+  const overflow: { label: string; id: string }[] = [];
+
   const pushList = (
     heading: string,
-    entries: { line: string; id?: string }[],
-    opts2: { footer?: string; name: string; max?: number } ,
+    entries: { line: string; id?: string; node?: MemoryNode }[],
+    opts2: { footer?: string; name: string; max?: number; reachable?: boolean } ,
   ) => {
     if (!entries.length) return;
     const capped = opts2.max ? entries.slice(0, opts2.max) : entries;
     const footerCost = opts2.footer ? count(opts2.footer) + 1 : 0;
     let localUsed = count(heading) + 2 + footerCost;
     const taken: string[] = [];
+    let rendered = 0;
     for (const e of capped) {
       const t = count(e.line) + 1;
       if (used + localUsed + t > opts.budget) break;
       taken.push(e.line);
       localUsed += t;
+      rendered++;
       if (e.id) included.push(e.id);
+    }
+    /**
+     * The tail — both what the per-section cap held back and what the budget
+     * did — becomes *reachable* rather than disappearing. A memory that was
+     * available and simply did not fit is exactly what a person can feel
+     * themselves half-remembering, and dropping it silently is what makes a
+     * model invent around the gap.
+     */
+    if (opts2.reachable !== false) {
+      for (const e of entries.slice(rendered)) {
+        if (!e.id || !e.node) continue;
+        const label = reachLabel(e.node);
+        if (label) overflow.push({ label, id: e.id });
+      }
     }
     if (!taken.length) return;
     const block = [heading, ...taken, ...(opts2.footer ? [opts2.footer] : [])].join('\n');
@@ -176,6 +256,7 @@ export function composeBrainContext(
     {
       name: 'intrusions',
       max: 2,
+      reachable: false,
       footer: `Do not narrate this as a memory. It intrudes: a flinch, a lost half-second, a reaction ${name} cannot fully explain.`,
     },
   );
@@ -183,7 +264,7 @@ export function composeBrainContext(
   // --- identity: the memories that made them (§1.3) ---
   pushList(
     `**Formative — these define how ${name} sees themselves**`,
-    identity.map((h) => ({ line: `- ${renderMemory(h, now, name)}`, id: h.node.id })),
+    identity.map((h) => ({ line: `- ${renderMemory(h, now, name)}`, id: h.node.id, node: h.node })),
     { name: 'identity', max: 4 },
   );
 
@@ -193,6 +274,7 @@ export function composeBrainContext(
     schemas.map((h) => ({
       line: `- ${h.node.gist}${h.node.warrant && h.node.warrant.support < 0.35 ? ' — they are less sure of this than they were' : ''}`,
       id: h.node.id,
+      node: h.node,
     })),
     { name: 'beliefs', max: 6 },
   );
@@ -205,22 +287,55 @@ export function composeBrainContext(
   pushList(
     `**How ${name} feels about who is here**`,
     relations.map((r) => ({ line: `- ${describeRelation(r)}` })),
-    { name: 'people', max: 6 },
+    { name: 'people', max: 6, reachable: false },
   );
 
   // --- general knowledge distilled from repetition (§7) ---
   pushList(
     `**Things ${name} simply knows by now**`,
-    semantic.map((h) => ({ line: `- ${h.node.gist}`, id: h.node.id })),
+    semantic.map((h) => ({ line: `- ${h.node.gist}`, id: h.node.id, node: h.node })),
     { name: 'knowledge', max: 6 },
   );
 
   // --- episodes: the bulk, filled strongest-first with whatever is left ---
   pushList(
     `**What ${name} remembers** (strongest recall first; faded ones are genuinely hazy)`,
-    episodic.map((h) => ({ line: `- ${renderMemory(h, now, name)}`, id: h.node.id })),
-    { name: 'episodes' },
+    episodic.map((h) => ({ line: `- ${renderMemory(h, now, name)}`, id: h.node.id, node: h.node })),
+    { name: 'episodes', max: opts.fullPerSection ?? FULL_PER_SECTION },
   );
+
+  /**
+   * The reach line (§3.3).
+   *
+   * Two stages, the way recall actually works: a handful of memories fully
+   * present, and a *sense* of what else is there. It costs a few words per
+   * memory instead of a sentence, and its real job is telling the model the
+   * shape of what this character knows so it stops filling the silence with
+   * invention.
+   *
+   * The wording is doing careful work. These are things the character *could*
+   * bring up, never things stated as fact — a label is not a memory, and a model
+   * given a bare list will happily assert it.
+   */
+  const reachedIds: string[] = [];
+  if (overflow.length) {
+    const seen = new Set<string>();
+    const picked: string[] = [];
+    for (const o of overflow) {
+      const key = o.label.toLowerCase();
+      if (seen.has(key) || included.includes(o.id)) continue;
+      seen.add(key);
+      picked.push(o.label);
+      reachedIds.push(o.id);
+      if (picked.length >= MAX_REACHABLE) break;
+    }
+    if (picked.length) {
+      const line = `**Within reach** — ${name} could bring any of these up if the moment calls for it, `
+        + `but none of it is present enough to state as fact unprompted: ${picked.join('; ')}.`;
+      if (!push(line)) reachedIds.length = 0;
+      else sections.push({ name: 'reach', tokens: count(line), count: picked.length });
+    }
+  }
 
   const text = parts.join('\n\n');
 
@@ -229,7 +344,7 @@ export function composeBrainContext(
     hits.map((h) => `- ${renderMemory(h, now, name)}`).join('\n'),
   ) + count(header) + count(selfBlock) + SECTION_OVERHEAD;
 
-  return { text, tokens: count(text), includedIds: included, sections, demand };
+  return { text, tokens: count(text), includedIds: included, sections, demand, reachedIds };
 }
 
 /**
@@ -321,20 +436,54 @@ function lowerFirst(s: string): string {
 }
 
 /**
- * Tokens all currently-reachable memory would need if nothing were trimmed —
- * feeds `ContextPlanInput.brainDemand`.
+ * What the brain would ask for if the budget were unlimited.
  *
- * Counts the *rendered* cost (prefix, timing phrase, feeling clause, quote)
- * rather than the bare gist, so a small brain asks for what it will actually
- * use and a large one saturates its cap honestly.
+ * This drives `planContext`, and through it how much of the window is left for
+ * chat history — so an over-estimate is not harmless. It used to sum *every
+ * non-dormant node in the graph*, which meant a mature brain always demanded
+ * more than the one-third cap and history was permanently cut by a third for
+ * memory that was never going to be emitted. The composer has never rendered
+ * the whole store; it renders a handful of capped sections.
+ *
+ * So demand is modelled on the composition instead. For each section, the
+ * costliest nodes that could plausibly fill it, up to that section's cap, plus
+ * the scaffolding and the reach line. Still an upper bound — the memories that
+ * actually win recall are usually cheaper than the longest ones — but a bound
+ * that no longer grows without limit as the character lives longer.
  */
 export function brainDemandTokens(brain: BrainState, count = estimateBrainTokens): number {
   let total = SECTION_OVERHEAD;
-  for (const n of Object.values(brain.nodes)) {
-    if (n.status === 'dormant') continue;
-    // ~14 tokens of rendering scaffolding per line ("A few days ago: … — it still lands as …").
-    total += count(`- ${n.gist} ${n.verbatim ?? ''} ${n.detail ?? ''}`) + 14;
+
+  /** ~14 tokens of rendering scaffolding per line ("A few days ago: … — it still lands as …"). */
+  const lineCost = (n: MemoryNode) =>
+    count(`- ${n.gist} ${n.verbatim ?? ''} ${n.detail ?? ''}`) + 14;
+
+  /**
+   * Section caps, mirroring `composeBrainContext`. Kept as a literal rather than
+   * derived, because the two are allowed to disagree — this one only has to be
+   * an upper bound, and a bound that silently tracked a lowered cap would
+   * under-request and truncate the block.
+   */
+  const caps: { kinds: MemoryNode['kind'][]; max: number }[] = [
+    { kinds: ['sensory'], max: 2 },
+    { kinds: ['identity'], max: 4 },
+    { kinds: ['schema'], max: 6 },
+    { kinds: ['semantic'], max: 6 },
+    { kinds: ['episodic', 'procedural', 'relational'], max: FULL_PER_SECTION },
+  ];
+
+  let reachable = 0;
+  for (const section of caps) {
+    const eligible = Object.values(brain.nodes)
+      .filter((n) => n.status !== 'dormant' && section.kinds.includes(n.kind));
+    const costs = eligible.map(lineCost).sort((a, b) => b - a);
+    for (const c of costs.slice(0, section.max)) total += c;
+    reachable += Math.max(0, eligible.length - section.max);
   }
+
+  // The reach line: a few words per named memory, capped.
+  if (reachable > 0) total += 24 + Math.min(reachable, MAX_REACHABLE) * 14;
+
   for (const r of Object.values(brain.people)) {
     total += count(describeRelation(r)) + 3;
   }

@@ -18,5 +18,6 @@ export * from './identity';
 export * from './mentation';
 export * from './theoryOfMind';
 export * from './stance';
+export * from './conviction';
 export * from './step';
 export * from './compose';

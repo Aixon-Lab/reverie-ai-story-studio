@@ -99,17 +99,23 @@ export function holdEvents(
 /** Hold the last few transcript beats that have not been encoded yet. */
 export function holdRecentTurns(
   brain: BrainState,
-  turns: { speaker: string; text: string }[],
+  turns: { speaker: string; text: string; isNarration?: boolean }[],
   now: number,
   makeId: () => string,
 ): void {
   const recent = turns.slice(-WORKING_CAPACITY);
   for (const turn of recent) {
-    const gist = `${turn.speaker}: ${turn.text.replace(/\s+/g, ' ').trim()}`.slice(0, 220);
+    const body = turn.text.replace(/\s+/g, ' ').trim();
+    /**
+     * A narration beat is held as what happened, with nobody attached to it.
+     * Attributing it to "Narrator" put that name in the actor cue, which is how
+     * recall started keying memories to the voice telling the story.
+     */
+    const gist = (turn.isNarration ? body : `${turn.speaker}: ${body}`).slice(0, 220);
     if (gist.length < 12) continue;
     holdInMind(brain, {
       gist,
-      actors: [turn.speaker],
+      actors: turn.isNarration ? [] : [turn.speaker],
       heldAt: now,
       salience: 0.2,
     }, makeId);

@@ -85,6 +85,7 @@ export function brainEncoderPrompt(input: EncoderInput): { system: string; user:
     '4. Write the gist as what it MEANS, in one or two plain sentences, third person about the character. Not a transcript.',
     '5. verbatim: include only a genuinely striking exact line (a promise, a threat, a confession, a name). Otherwise omit it.',
     '6. detail: the sensory particulars — what it looked, sounded, smelled like. Required when arousal is extreme.',
+    '7. Lines marked [narration] are the story\'s own voice describing the world. Encode WHAT THEY DESCRIBE, but the narrator is not a person: never list "Narrator", "the story", "the scene" or any similar label in "actors" or "aliases". Actors are only people who could be met, spoken to, or held responsible.',
     '',
     'APPRAISAL — rate the SITUATION, not the feeling.',
     `Do NOT tell us what ${character.name} felt. Rate the checks below and the simulation derives the emotion from their temperament.`,

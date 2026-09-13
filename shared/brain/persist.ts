@@ -45,6 +45,7 @@ export function mergeGenerationEffects(fresh: BrainState, stale: BrainState): vo
 
   mergeIntention(fresh, stale);
   mergeSteer(fresh, stale);
+  mergeForecast(fresh, stale);
 
   if (stale.working?.length) {
     const staleNewest = Math.max(...stale.working.map((s) => s.heldAt));
@@ -56,6 +57,25 @@ export function mergeGenerationEffects(fresh: BrainState, stale: BrainState): vo
 
   if (stale.aliases && Object.keys(stale.aliases).length) {
     fresh.aliases = { ...(fresh.aliases ?? {}), ...stale.aliases };
+  }
+}
+
+/**
+ * A prediction formed during a generation must survive the flush.
+ *
+ * With one exception, and it is the whole reason this is not a one-liner: if the
+ * consolidation that ran underneath us *scored* a forecast, that prediction is
+ * spent. Copying the generation's copy back over would resurrect it, and the
+ * character would be tested twice on the same call — inflating the calibration
+ * statistic with a duplicate and, worse, lifting the same events' novelty again.
+ * A higher tested count on the fresh brain is the evidence that happened.
+ */
+function mergeForecast(fresh: BrainState, stale: BrainState): void {
+  if (!stale.forecast) return;
+  const scoredMeanwhile = (fresh.stats.forecastsTested ?? 0) > (stale.stats.forecastsTested ?? 0);
+  if (scoredMeanwhile) return;
+  if (!fresh.forecast || stale.forecast.madeAt > fresh.forecast.madeAt) {
+    fresh.forecast = stale.forecast;
   }
 }
 

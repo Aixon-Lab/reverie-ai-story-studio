@@ -249,10 +249,32 @@
 
 /* ---- psyche ---- */
 
+/**
+ * Masonry, not a grid.
+ *
+ * These panels have wildly different natural heights — "State of mind" runs to
+ * meters, prose, trauma and bonds; "Working self" is often four lines. In a grid
+ * every card in a row is stretched to the tallest one in that row, so a short
+ * card sat in a box of dead space and the row below it started at the bottom of
+ * the tallest card rather than at the bottom of itself. Two rows of six panels
+ * could leave most of a screen empty.
+ *
+ * Columns pack instead: each card takes exactly the height it needs and the next
+ * one starts immediately underneath. Reading order becomes column-major, which is
+ * the standard trade for masonry and is fine here — the panels are independent
+ * read-outs, not a sequence.
+ */
 .mind-psyche {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 12px; align-content: start;
+  column-width: 340px;
+  column-gap: 12px;
+}
+.mind-psyche > * {
+  /* A panel must never be split down the middle across a column boundary. */
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  margin: 0 0 12px;
 }
 .mind-panel { display: flex; flex-direction: column; gap: 9px; padding: 16px; }
 .mind-panel h2 { display: flex; align-items: center; gap: 7px; margin: 0; }

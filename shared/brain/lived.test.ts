@@ -289,7 +289,8 @@ describe('lived scene — a betrayal at the docks', () => {
       probability: 1,
       breakdown: {
         base: 1, spreading: 0, partialMatch: 0, boost: 0,
-        suppression: 0, moodCongruence: 0, noise: 0, availability: 0.2, total: 1,
+        suppression: 0, moodCongruence: 0, noise: 0, availability: 0.2,
+        interference: 0, maturation: 0, total: 1,
       },
       intrusion: false,
     }], [], T0 + MIN);

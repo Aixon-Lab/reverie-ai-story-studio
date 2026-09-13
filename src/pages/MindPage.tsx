@@ -716,6 +716,16 @@ function NodeInspector({
         {node.drifted && <span className="mind-tag mind-tag-drift">drifted</span>}
         {node.primed && <span className="mind-tag">primed</span>}
         {node.fatigued && <span className="mind-tag">worn</span>}
+        {node.settling && (
+          <span className="mind-tag" title="Too recent to have consolidated — it has not sunk in yet">
+            settling
+          </span>
+        )}
+        {node.blurred && (
+          <span className="mind-tag" title="Near-identical memories are blurring into this one, so it is hard to single out">
+            blurred
+          </span>
+        )}
         <span className={`mind-tag mind-tag-${node.status}`}>{node.status}</span>
         <span style={{ flex: 1 }} />
         <button className="icon-btn" onClick={onClose} title="Close">×</button>
@@ -1123,7 +1133,8 @@ function PsycheView({
     <div className="mind-psyche">
       <ConditionPanel graph={graph} />
 
-      {(graph.intention || graph.steer || (graph.working && graph.working.length > 0)) && (
+      {(graph.intention || graph.steer || graph.forecast || graph.lastSurprise
+        || (graph.working && graph.working.length > 0)) && (
         <section className="panel mind-panel">
           <h2 className="t-label">What they want in this scene</h2>
           {graph.intention ? (
@@ -1145,6 +1156,30 @@ function PsycheView({
             </div>
           ) : (
             <p className="t-caption">No particular objective right now.</p>
+          )}
+          {graph.forecast && (
+            <div className="mind-forecast">
+              <p className="field-label" style={{ marginTop: 12 }}>What they are counting on</p>
+              <p className="t-caption">
+                {graph.forecast.target
+                  ? <>They expect <b>{graph.forecast.target}</b> to {graph.forecast.stance >= 0 ? 'be on their side' : 'act against them'}</>
+                  : <>They expect their objective to {graph.forecast.progress >= 0 ? 'advance' : 'stall'}</>}
+                {' '}— {Math.round(graph.forecast.confidence * 100)}% sure. This is a real
+                prediction: the next consolidation scores it, and being wrong is what
+                makes something worth remembering.
+              </p>
+              {typeof graph.forecastAccuracy === 'number' && (
+                <p className="t-caption">
+                  Calls like this have been right <b>{Math.round(graph.forecastAccuracy * 100)}%</b> of
+                  the time, over {graph.forecastsTested} tested.
+                </p>
+              )}
+            </div>
+          )}
+          {graph.lastSurprise && (
+            <p className="t-caption mind-steer">
+              Wrong-footed: {graph.lastSurprise.note}
+            </p>
           )}
           {graph.steer && (
             <p className="t-caption mind-steer">

@@ -16,6 +16,19 @@ export interface TranscriptTurn {
   speaker: string;
   text: string;
   isUser: boolean;
+  /**
+   * A narration beat rather than somebody speaking.
+   *
+   * The text still matters — it is where scene, place and consequence live — but
+   * the *speaker* is a voice, not a participant, so it must never reach an actor
+   * list or a relationship model.
+   */
+  isNarration?: boolean;
+}
+
+/** How a turn reads in a transcript the encoder is given. */
+export function turnLine(t: TranscriptTurn): string {
+  return t.isNarration ? `[narration] ${t.text}` : `${t.speaker}: ${t.text}`;
 }
 
 /** Words that mark a change of scene, place or time — real event boundaries (§2.2). */
@@ -25,7 +38,13 @@ const BOUNDARY_CUES = [
   'the door', 'they leave', 'morning', 'evening', 'night falls', 'dawn',
 ];
 
-const AROUSAL_WORDS: Record<string, number> = {
+/**
+ * Exported so `drift.ts` can score the character's *own* output on the same
+ * scale the encoder scores the world on. Using one lexicon for both is what lets
+ * "the psyche says furious, the prose says nothing" be a comparison rather than
+ * two unrelated numbers.
+ */
+export const AROUSAL_WORDS: Record<string, number> = {
   scream: 0.9, screamed: 0.9, screaming: 0.9, terror: 0.95, terrified: 0.9, panic: 0.85,
   blood: 0.8, kill: 0.85, killed: 0.9, died: 0.9, death: 0.85, dying: 0.9,
   rage: 0.85, furious: 0.8, fury: 0.85, attack: 0.8, attacked: 0.85, weapon: 0.7,
@@ -37,7 +56,7 @@ const AROUSAL_WORDS: Record<string, number> = {
   saved: 0.7, rescue: 0.75, rescued: 0.8, goodbye: 0.65, forever: 0.55,
 };
 
-const VALENCE_WORDS: Record<string, number> = {
+export const VALENCE_WORDS: Record<string, number> = {
   love: 0.8, loved: 0.8, kind: 0.5, gentle: 0.5, safe: 0.6, warm: 0.5, laugh: 0.6,
   laughed: 0.6, smile: 0.5, smiled: 0.5, thank: 0.5, saved: 0.7, rescued: 0.7,
   beautiful: 0.5, hope: 0.5, forgive: 0.6, forgiven: 0.7, home: 0.4, together: 0.4,
@@ -103,7 +122,7 @@ export function elaborationSalience(contentWords: number): number {
   return clamp01(Math.min(CEILING, Math.max(0, (contentWords - MIN_WORDS) / SPAN)));
 }
 
-function scoreLexicon(tokens: Set<string>, lexicon: Record<string, number>): { sum: number; hits: number; peak: number } {
+export function scoreLexicon(tokens: Set<string>, lexicon: Record<string, number>): { sum: number; hits: number; peak: number } {
   let sum = 0, hits = 0, peak = 0;
   for (const t of tokens) {
     const v = lexicon[t];
@@ -123,7 +142,7 @@ export function heuristicEncodeSegment(
   segment: TranscriptTurn[],
   selfName: string,
 ): AppraisedEvent | null {
-  const text = segment.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+  const text = segment.map(turnLine).join('\n');
   const tokens = tokenSet(text);
   if (tokens.size < 6) return null;
 
@@ -138,8 +157,10 @@ export function heuristicEncodeSegment(
 
   // Who acted? If the other side of the conversation carried the loaded words,
   // attribute agency to them.
-  const otherSpeakers = [...new Set(segment.filter((t) => t.speaker !== selfName).map((t) => t.speaker))];
-  const selfSpoke = segment.some((t) => t.speaker === selfName);
+  const otherSpeakers = [...new Set(
+    segment.filter((t) => !t.isNarration && t.speaker !== selfName).map((t) => t.speaker),
+  )];
+  const selfSpoke = segment.some((t) => !t.isNarration && t.speaker === selfName);
   const agency: AppraisedEvent['appraisal']['agency'] =
     otherSpeakers.length && Math.abs(valence) > 0.2 ? 'other' : selfSpoke ? 'self' : 'circumstance';
 
@@ -198,6 +219,8 @@ function summarize(segment: TranscriptTurn[], selfName: string): string {
   // Roleplay lines are short; two content words is already a real beat.
   if (!best || best.score < 2) return '';
   const line = best.t.text.replace(/\s+/g, ' ').trim().slice(0, 220);
+  // Narration has no speaker to attribute the gist to — it is what happened.
+  if (best.t.isNarration) return line;
   const who = best.t.speaker === selfName ? `${selfName}` : best.t.speaker;
   return `${who}: ${line}`;
 }

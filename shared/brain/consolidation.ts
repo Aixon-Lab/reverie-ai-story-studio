@@ -13,7 +13,9 @@ import {
   addTrace, ageIn, baseLevel, clamp01, clampSigned, emotionalBoost, similarity, verbatimStrength,
 } from './activation';
 import { appraiseToAffect, updateMood } from './emotion';
-import { addEdge, autoLink, decayEdges, removeNodeEdges } from './graph';
+import { addEdge, autoLink, buildIndex, decayEdges, removeNodeEdges } from './graph';
+import { recomputeInterference } from './interference';
+import { resolveForecast, scoreForecast } from './forecast';
 import { encodeEvent, type EncodeContext } from './encoding';
 import {
   abstractionFactor, gainsOf, modulatorsOf,
@@ -98,6 +100,19 @@ export function consolidate(brain: BrainState, input: ConsolidateInput): Consoli
     traumaFormed: [], traitDrift: {}, moodBefore: { ...brain.mood }, moodAfter: { ...brain.mood },
     peopleUpdated: [], at: now,
   };
+
+  /**
+   * Score the standing prediction *before* anything is encoded (`forecast.ts`).
+   *
+   * Order is the whole mechanism. Surprise has to be measured against the
+   * expectation that existed before the scene, and it has to be folded into the
+   * events' novelty before the encoding gate reads them — otherwise a violated
+   * expectation is discovered only after the memory it should have saved was
+   * already discarded as forgettable.
+   */
+  const forecast = scoreForecast(brain.forecast, input.events, brain);
+  resolveForecast(brain, input.events, forecast);
+  report.surprise = forecast.tested ? forecast.surprise : undefined;
 
   const feltAffects: Affect[] = [];
   const pressures: ReturnType<typeof traitPressure>[] = [];
@@ -289,6 +304,22 @@ export function consolidate(brain: BrainState, input: ConsolidateInput): Consoli
   for (const node of newNodes) {
     if (brain.nodes[node.id]) autoLink(brain, brain.nodes[node.id], { maxLinks: 3 });
   }
+
+  /**
+   * Interference, last, because it has to see the graph as it finally is
+   * (`interference.ts`).
+   *
+   * This is the sleep-phase half of forgetting: similar memories blurring into
+   * each other at rest, as opposed to decaying with time or losing a retrieval.
+   * It is O(n · k) over the whole graph, so it runs only on maintenance passes —
+   * the same discipline `recomputeWarrants` follows, and for the same reason: a
+   * long re-read must not pay for it once per chunk.
+   *
+   * Deliberately after prune and relink. Running it earlier would score a memory
+   * against near-twins that are about to be deleted, and miss the ones the last
+   * few links just brought into its neighbourhood.
+   */
+  if (maintain) report.interfered = recomputeInterference(brain, buildIndex(brain));
 
   /**
    * Retire a relationship the character has with themselves.

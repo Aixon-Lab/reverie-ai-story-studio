@@ -465,6 +465,10 @@ export interface BrainGraphNode {
   perceivedAt?: number;
   primed?: boolean;
   fatigued?: boolean;
+  /** Has near-twins it can no longer be singled out from (`interference.ts`). */
+  blurred?: boolean;
+  /** Laid down too recently to have consolidated yet (`maturation.ts`). */
+  settling?: boolean;
   forecast?: string;
 }
 
@@ -532,6 +536,22 @@ export interface BrainGraph {
   } | null;
   steer?: { text: string; prefer?: string; setAt: number; ttl: number } | null;
   working?: { id: string; gist: string; actors: string[]; heldAt: number; salience: number }[];
+  /**
+   * The prediction this mind is currently exposed on (`brain/forecast.ts`), and
+   * how well such calls have gone. `forecastAccuracy` is null until there is
+   * enough of a record to read.
+   */
+  forecast?: {
+    target?: string;
+    stance: number;
+    confidence: number;
+    progress: number;
+    madeAt: number;
+    ttl: number;
+  } | null;
+  lastSurprise?: { note: string; surprise: number; at: number } | null;
+  forecastAccuracy?: number | null;
+  forecastsTested?: number;
   config: {
     enabled: boolean;
     updateEveryMessages: number;

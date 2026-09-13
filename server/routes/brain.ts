@@ -11,6 +11,8 @@ import { buildIndex } from '../../shared/brain/graph';
 import { cueFromContext, recall } from '../../shared/brain/retrieval';
 import { brainDemandTokens, memoryHealth } from '../../shared/brain/compose';
 import { forecastDecay, stpTerm } from '../../shared/brain/synapse';
+import { maturity } from '../../shared/brain/maturation';
+import { forecastAccuracy } from '../../shared/brain/forecast';
 import { setSteer, ttlFromIntensity, type IntentionKind } from '../../shared/brain/volition';
 import { liveWorking } from '../../shared/brain/working';
 import { describeWarrant } from '../../shared/brain/warrant';
@@ -414,6 +416,16 @@ brainRoutes.get('/brains/:chatId/:characterId/graph', async (req, res) => {
       perceivedAt: n.perceivedAt,
       primed: stpTerm(n, now) > 0.08,
       fatigued: stpTerm(n, now) < -0.08,
+      /**
+       * The two quiet forgetting mechanisms, made visible.
+       *
+       * Both are otherwise invisible in the graph — a memory simply stops
+       * winning recalls and nothing on the page says why. `blurred` means it has
+       * near-twins it can no longer be singled out from; `settling` means it was
+       * laid down too recently to have consolidated yet.
+       */
+      blurred: (n.interference ?? 0) > 0,
+      settling: maturity(n, brain) < 0.9,
       forecast: forecastDecay(n, now, p).label,
     };
   });
@@ -435,6 +447,16 @@ brainRoutes.get('/brains/:chatId/:characterId/graph', async (req, res) => {
     intention: brain.intention && brain.intention.status === 'active' ? brain.intention : null,
     steer: brain.steer && brain.steer.ttl > 0 ? brain.steer : null,
     working: liveWorking(brain, now),
+    /**
+     * What they are currently exposed on, and how often such calls turn out
+     * right (`forecast.ts`). The accuracy is the falsifiability hook: near 1
+     * would mean the prediction is too coarse to ever be wrong, near 0 that it
+     * is noise. It is `null` until there is enough of a record to read.
+     */
+    forecast: brain.forecast ?? null,
+    lastSurprise: brain.lastSurprise ?? null,
+    forecastAccuracy: forecastAccuracy(brain),
+    forecastsTested: brain.stats.forecastsTested ?? 0,
     /**
      * The psyche, plus the two read-outs the UI cannot compute for itself:
      * how the character's condition reads in plain language, and how their life
@@ -619,7 +641,18 @@ export async function consolidateForChat(
     const members = await Promise.all(group.members.map((m) => loadCharacter(m).catch(() => null)));
     cast = members.filter(Boolean).map((c) => c!.name);
   }
+  /**
+   * Anyone who has actually spoken recently joins the cast, so an NPC the story
+   * invented is recognised as a person rather than a stranger every pass.
+   *
+   * Narration and system turns are excluded on purpose. They carry a speaker
+   * label ("Narrator") like any other turn, and once that label was in the cast
+   * the encoder was being told the narrator was somebody in the scene — which is
+   * exactly how characters ended up with trust and resentment toward the voice
+   * telling their story.
+   */
   for (const m of messages.slice(-40)) {
+    if (m.speaker.type === 'narrator' || m.speaker.type === 'system') continue;
     if (!cast.includes(m.speaker.displayName)) cast.push(m.speaker.displayName);
   }
 

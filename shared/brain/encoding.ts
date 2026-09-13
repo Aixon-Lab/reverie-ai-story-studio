@@ -121,6 +121,12 @@ export function encodeEvent(
     chapterId: ctx.chapterId,
     contextBinding: traumatic ? Math.min(binding, 0.3) : binding,
     suppressed: 0,
+    /**
+     * Which pass laid this down, so `maturation.ts` can tell a trace that has
+     * settled from one made moments ago. Counted in passes rather than clock
+     * time because six messages can cover three weeks of story.
+     */
+    encodedAtPass: brain.stats.updates ?? 0,
     status: 'active',
     sourceChatId: ctx.chatId,
     sourceMessageIds: event.sourceMessageIds,

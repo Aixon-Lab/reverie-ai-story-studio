@@ -11,17 +11,60 @@
  */
 import {
   DEFAULT_PSYCHE_PARAMS, assessCondition, buildSelfConcept, classifyChapter,
-  emptyTheoryOfMind, formTrauma, inferInterlude, isSupportive, mentate,
-  normalizePsyche, recordWitnessed, relationalDamage, restScene, stepScene,
-  transferPriors, updateBond, updateWorkingModel,
+  decayMindModels, emptyTheoryOfMind, formTrauma, inferInterlude, isSupportive,
+  mentate, normalizePsyche, recordInferred, recordWitnessed, relationalDamage,
+  restScene, stepScene, transferPriors, updateBond, updateWorkingModel,
   type Bond, type ChapterArc, type GraphSummary, type PsycheState, type SceneCost,
-  type SelfConcept,
+  type SelfConcept, type TheoryOfMind,
 } from '../../shared/psyche';
 import { appraiseToAffect } from '../../shared/brain/emotion';
 import { baseLevel } from '../../shared/brain/activation';
+import { isNonPerson } from '../../shared/brain/entities';
 import type {
   AppraisedEvent, BrainState, ConsolidationReport, MemoryNode,
 } from '../../shared/brain/types';
+
+/** Causal edges strong enough that following them counts as ordinary reasoning. */
+const IMPLICATION_KINDS = new Set(['caused', 'led_to', 'broke_promise', 'kept_promise']);
+const MIN_IMPLICATION_WEIGHT = 0.6;
+
+/**
+ * Extend each person's model with what their own memories imply.
+ *
+ * One hop only. "You saw him take it, so you know it is gone" is reasoning
+ * anybody does; "you saw him take it, so you know why he needed the money" is a
+ * story, and attributing it to somebody else is how this mechanism would start
+ * inventing minds instead of modelling them.
+ */
+function inferFromAccess(brain: BrainState, tom: TheoryOfMind, now: number): TheoryOfMind {
+  const byNode = new Map<string, { to: string; weight: number }[]>();
+  for (const edge of brain.edges) {
+    if (!IMPLICATION_KINDS.has(edge.kind) || edge.weight < MIN_IMPLICATION_WEIGHT) continue;
+    for (const [from, to] of [[edge.from, edge.to], [edge.to, edge.from]] as const) {
+      byNode.set(from, [...(byNode.get(from) ?? []), { to, weight: edge.weight }]);
+    }
+  }
+  if (!byNode.size) return tom;
+
+  for (const mind of Object.values(tom.minds)) {
+    // Snapshot: inferences must follow from what they actually witnessed, never
+    // from an inference made a moment ago in this same loop.
+    const witnessed = mind.knows.filter((b) => b.source === 'witnessed');
+    for (const belief of witnessed) {
+      for (const link of byNode.get(belief.nodeId) ?? []) {
+        const node = brain.nodes[link.to];
+        if (!node || node.status === 'dormant') continue;
+        recordInferred(tom, mind.key, {
+          nodeId: node.id,
+          gist: node.gist,
+          at: now,
+          certainty: belief.certainty * link.weight * 0.5,
+        }, now);
+      }
+    }
+  }
+  return tom;
+}
 
 /** Summarise the graph for the condition read-out (§P.5). */
 export function summariseGraph(brain: BrainState, now: number): GraphSummary {
@@ -77,6 +120,7 @@ export function updateBonds(
   events: AppraisedEvent[],
   psyche: PsycheState,
   now: number,
+  cast: string[] = [],
 ): string[] {
   const notes: string[] = [];
   const self = brain.characterName.toLowerCase();
@@ -85,6 +129,15 @@ export function updateBonds(
     for (const actorName of event.actors) {
       const key = actorName.toLowerCase();
       if (key === self) continue;
+      /**
+       * A bond is with somebody in the room, and the narrator is not in the room.
+       *
+       * `canonicalizeActors` already strips narrating voices from what gets
+       * *encoded*, but bonds are built from the raw events rather than from the
+       * nodes — so without this the psyche kept forming a relationship with the
+       * storytelling voice even after memory had stopped recording one.
+       */
+      if (isNonPerson(actorName, cast)) continue;
 
       let rel = brain.people[key] as Bond | undefined;
       if (!rel) {
@@ -189,7 +242,7 @@ export function advancePsyche(input: PsycheStepInput): PsycheState {
 
   // Relationships update before appraisal, so a betrayal is measured against the
   // expectation that existed *before* it happened.
-  notes.push(...updateBonds(brain, events, psyche, now));
+  notes.push(...updateBonds(brain, events, psyche, now, input.cast));
 
   /**
    * Who saw what (§N.2.1).
@@ -230,6 +283,28 @@ export function advancePsyche(input: PsycheStepInput): PsycheState {
       }),
     };
   }
+
+  /**
+   * What they could have worked out from what they saw (§3.10).
+   *
+   * The ToM benchmarks put the bottleneck precisely here — converting *access*
+   * into *belief* — so it is computed as state rather than reasoned about, like
+   * everything else in this layer. The graph is walked, not the psyche, which is
+   * why this lives in the server bridge: `theoryOfMind.ts` stays pure and never
+   * learns that a memory graph exists.
+   *
+   * Deliberately narrow. Only edges the encoder explicitly asserted as causal,
+   * only strong ones, and the result is held below the certainty at which it
+   * would count as knowledge. Being too generous here is how a character talks
+   * themselves into revealing something because "they must have guessed by now".
+   */
+  psyche = { ...psyche, theoryOfMind: inferFromAccess(brain, psyche.theoryOfMind!, now) };
+
+  /**
+   * …and forget how sure they were that they mentioned things. One scene has
+   * passed, so one scene of certainty goes.
+   */
+  psyche = { ...psyche, theoryOfMind: decayMindModels(psyche.theoryOfMind!, 1) };
 
   const graph = summariseGraph(brain, now);
 

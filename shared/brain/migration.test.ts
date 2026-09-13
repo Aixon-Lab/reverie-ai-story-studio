@@ -102,3 +102,51 @@ describe('superseded parameter defaults are migrated, tuned values are not', () 
     }
   });
 });
+
+/**
+ * Brains already on disk carry a bond with the narrator.
+ *
+ * The writes are fixed at source, but a character who has been played for weeks
+ * has "Narrator: trust −0.4, resentment +0.5" sitting in their People list and
+ * "Narrator" stamped on the actors of every memory formed during a narrated
+ * beat. Load is the only place that reaches those.
+ */
+describe('a stored bond with the narrator is cleared on load', () => {
+  it('drops the relationship record', () => {
+    const brain = load({
+      characterName: 'Scarlet Wren',
+      people: {
+        narrator: rel('narrator', 'Narrator'),
+        system: rel('system', 'System'),
+        'jonas rooke': rel('jonas rooke', 'Jonas Rooke'),
+      },
+    });
+    expect(Object.keys(brain.people)).toEqual(['jonas rooke']);
+  });
+
+  it('unfiles the narrator as an actor without touching the memory', () => {
+    const brain = load({
+      characterName: 'Scarlet Wren',
+      nodes: {
+        n1: {
+          ...({} as any),
+          id: 'n1',
+          gist: 'The door closed behind them.',
+          actors: ['Narrator', 'Jonas Rooke'],
+        } as any,
+      },
+    });
+    expect(brain.nodes.n1.actors).toEqual(['Jonas Rooke']);
+    expect(brain.nodes.n1.gist).toBe('The door closed behind them.');
+  });
+
+  it('breaks an alias that folded a real person into the narrator', () => {
+    const brain = load({
+      characterName: 'Scarlet Wren',
+      aliases: { 'the voice': 'narrator', rooke: 'jonas rooke' },
+      people: { 'jonas rooke': rel('jonas rooke', 'Jonas Rooke') },
+    });
+    expect(brain.aliases?.['the voice']).toBeUndefined();
+    expect(brain.aliases?.rooke).toBe('jonas rooke');
+  });
+});

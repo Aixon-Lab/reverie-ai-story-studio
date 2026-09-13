@@ -44,6 +44,44 @@ export function isPronoun(name: string): boolean {
 }
 
 /**
+ * Labels that name a voice or a device, never a person in the scene.
+ *
+ * The narrator is a camera. It has no body in the room, no intent toward
+ * anybody, and nothing it "does" is something a character can trust, fear or
+ * resent — it is the story being told, not somebody telling it *at* them.
+ *
+ * But narration is written into the transcript with a speaker label like every
+ * other turn, so both encoders read it as a participant: the model copied
+ * "Narrator" straight into `actors`, and the offline heuristics take actors
+ * from speaker names directly. A `RelationModel` grew for it, and the People
+ * list ended up showing trust and resentment toward the narrating voice itself.
+ *
+ * Checked against the cast before it is applied (see `isNonPerson`), so a real
+ * character who happens to be *called* Scene or Author is still a person.
+ */
+const NON_PERSONS = new Set([
+  'narrator', 'narration', 'narrative', 'storyteller', 'story', 'scene', 'setting',
+  'system', 'assistant', 'author', 'gm', 'dm', 'game master', 'dungeon master',
+  'none', 'nobody', 'no one', 'noone', 'n/a', 'na', 'unknown', 'someone', 'somebody',
+  'everyone', 'everybody', 'all', 'the world',
+]);
+
+/**
+ * Is this actor name a narrating voice rather than somebody in the scene?
+ *
+ * `cast` is the escape hatch and the reason this is safe: anybody actually
+ * present under that name is a person, whatever the word happens to mean.
+ */
+export function isNonPerson(name: string, cast?: Iterable<string>): boolean {
+  const key = personKey(name).replace(/^the\s+/, '');
+  if (!NON_PERSONS.has(key)) return false;
+  for (const member of cast ?? []) {
+    if (personKey(member) === personKey(name)) return false;
+  }
+  return true;
+}
+
+/**
  * The key this name should live under.
  *
  * Walks the alias table once. A cycle (should never be written) stops at
@@ -112,7 +150,7 @@ export function learnPerson(
   return key;
 }
 
-/** Canonicalise a list of actor names, dropping empties and pronouns. */
+/** Canonicalise a list of actor names, dropping empties, pronouns and non-people. */
 export function canonicalizeActors(
   brain: BrainState,
   actors: string[] | undefined,
@@ -122,7 +160,7 @@ export function canonicalizeActors(
   const seen = new Set<string>();
   for (const raw of actors ?? []) {
     const name = (raw ?? '').trim();
-    if (!name || isPronoun(name)) continue;
+    if (!name || isPronoun(name) || isNonPerson(name, cast)) continue;
     const key = learnPerson(brain, name, { cast });
     if (seen.has(key)) continue;
     seen.add(key);
@@ -146,9 +184,10 @@ export function learnAliasGroups(
 ): void {
   if (!groups?.length) return;
   for (const group of groups) {
+    if (isNonPerson(group.canonical, cast)) continue;
     const canon = learnPerson(brain, group.canonical, { cast });
     for (const also of group.also ?? []) {
-      if (isPronoun(also)) continue;
+      if (isPronoun(also) || isNonPerson(also, cast)) continue;
       const match = findUniqueMatch(brain, also, cast ?? []);
       // Only fold if the alias is free or already points at this person.
       if (!match || resolvePerson(brain, match) === canon || personKey(match) === canon) {

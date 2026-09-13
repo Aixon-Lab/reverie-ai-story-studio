@@ -126,6 +126,40 @@ function ensureMind(tom: TheoryOfMind, key: string, displayName: string, now: nu
 
 const MAX_PER_PERSON = 40;
 
+/**
+ * Below this, a belief is not "they know" — it is "they might have worked it
+ * out", which is a different social situation and needs different behaviour.
+ *
+ * The distinction is the whole point of tracking inference at all. Collapsing it
+ * into knowing is how a character reveals a secret because they assumed the
+ * other person had already guessed.
+ */
+export const KNOWN_CERTAINTY = 0.5;
+
+/**
+ * How sure the character may ever be that somebody worked something out.
+ *
+ * Capped below `KNOWN_CERTAINTY` by construction: an inference about another
+ * person's inference is exactly the kind of thing people are wrong about, and
+ * the failure mode of being too confident here is leaking a secret.
+ */
+export const MAX_INFERRED_CERTAINTY = 0.45;
+
+/**
+ * Certainty a told-belief decays toward but never past.
+ *
+ * It must not reach zero. A belief that decayed out of existence would make
+ * `guardedTopics` report that the person does *not* know something they
+ * demonstrably do, and the character would start guarding a secret they had
+ * already shared — which is worse than the forgetting it was meant to model.
+ * Fading to "I think I mentioned it, but I am not sure" is the real behaviour
+ * and it is the safe one.
+ */
+export const TOLD_CERTAINTY_FLOOR = 0.22;
+
+/** Per scene. Twenty-odd scenes takes a confident telling down to hazy. */
+export const TOLD_DECAY_PER_SCENE = 0.04;
+
 export interface WitnessInput {
   nodeId: string;
   gist: string;
@@ -188,6 +222,74 @@ export function recordTold(
   return tom;
 }
 
+/**
+ * The character reckons this person could have put it together (§3.10).
+ *
+ * The ToM benchmarks isolate exactly this step as where models fail: turning
+ * *what somebody had access to* into *what they now believe*. It is tracked
+ * rather than reasoned about, like everything else here, and it is held at low
+ * certainty on purpose — see `MAX_INFERRED_CERTAINTY`.
+ *
+ * Never overwrites something firmer. Being able to deduce a thing you already
+ * watched happen does not make you know it less.
+ */
+export function recordInferred(
+  tom: TheoryOfMind,
+  person: string,
+  belief: Omit<BeliefRecord, 'source' | 'certainty'> & { certainty?: number },
+  now: number,
+): TheoryOfMind {
+  const mind = ensureMind(tom, person, person, now);
+  const certainty = Math.min(MAX_INFERRED_CERTAINTY, clamp01(belief.certainty ?? 0.3));
+
+  const existing = mind.knows.find((b) => b.nodeId === belief.nodeId);
+  if (existing) {
+    if (existing.source === 'inferred') existing.certainty = Math.max(existing.certainty, certainty);
+    return tom;
+  }
+  /**
+   * A secret being deliberately kept is not inferable.
+   *
+   * Without this, the character talks themselves out of their own concealment:
+   * "they have probably guessed" is the most natural way in the world to justify
+   * saying the thing you decided not to say.
+   */
+  if (mind.withheld.some((b) => b.nodeId === belief.nodeId)) return tom;
+
+  mind.knows.push({
+    ...belief,
+    gist: belief.gist.slice(0, 160),
+    source: 'inferred',
+    certainty,
+  });
+  mind.knows = mind.knows.slice(-MAX_PER_PERSON);
+  mind.updatedAt = now;
+  return tom;
+}
+
+/**
+ * Forget how sure you were that you mentioned it (§3.10).
+ *
+ * Only what the character *said* and what they *deduced* fades. That somebody
+ * was in the room when it happened is not the kind of thing you become unsure
+ * of, so `witnessed` is untouched — and neither is what they are hiding, because
+ * keeping a secret is an active job.
+ *
+ * Measured in scenes rather than clock time, for the same reason maturation is:
+ * six messages can cover three weeks.
+ */
+export function decayMindModels(tom: TheoryOfMind, scenes = 1): TheoryOfMind {
+  if (scenes <= 0) return tom;
+  const factor = Math.pow(1 - TOLD_DECAY_PER_SCENE, scenes);
+  for (const mind of Object.values(tom.minds)) {
+    for (const belief of mind.knows) {
+      if (belief.source !== 'told' && belief.source !== 'inferred') continue;
+      belief.certainty = Math.max(TOLD_CERTAINTY_FLOOR, belief.certainty * factor);
+    }
+  }
+  return tom;
+}
+
 /** The character is keeping this from someone. */
 export function recordWithheld(
   tom: TheoryOfMind,
@@ -234,6 +336,15 @@ export interface KnowledgeVerdict {
   knows: boolean;
   certainty: number;
   source?: KnowledgeSource;
+  /**
+   * They might have worked it out, and the character cannot be sure.
+   *
+   * A deliberate third state. Binary knowledge produces a character who either
+   * speaks freely or guards absolutely, and the socially interesting case —
+   * probing, testing the water, not being certain how much the other person has
+   * put together — lives entirely in between.
+   */
+  suspected?: boolean;
   /** Plain-language reason, for the prompt and the inspector. */
   why: string;
 }
@@ -258,26 +369,15 @@ export function doesKnow(
   const byId = target.nodeId
     ? mind.knows.find((b) => b.nodeId === target.nodeId)
     : undefined;
-  if (byId) {
-    return {
-      knows: true,
-      certainty: byId.certainty,
-      source: byId.source,
-      why: byId.source === 'witnessed' ? 'they were there' : 'they were told',
-    };
-  }
+  if (byId) return verdictFor(byId);
 
   if (target.gist) {
     const near = mind.knows
       .map((b) => ({ b, s: relatedGist(b.gist, target.gist!) }))
       .sort((x, y) => y.s - x.s)[0];
     if (near && near.s >= 0.5) {
-      return {
-        knows: true,
-        certainty: near.b.certainty * near.s,
-        source: near.b.source,
-        why: 'they know a version of this',
-      };
+      const v = verdictFor(near.b);
+      return { ...v, certainty: v.certainty * near.s, why: v.knows ? 'they know a version of this' : v.why };
     }
     // Being *deliberately* kept from something is a stronger "no" than silence.
     const hidden = mind.withheld
@@ -292,29 +392,83 @@ export function doesKnow(
 }
 
 /**
+ * One stored belief → a verdict.
+ *
+ * The certainty cut is where inference stops counting as knowledge. Below it the
+ * character has a suspicion about somebody else's mind, which is not the same
+ * thing as information and must not be spent as though it were.
+ */
+function verdictFor(belief: BeliefRecord): KnowledgeVerdict {
+  if (belief.certainty >= KNOWN_CERTAINTY) {
+    return {
+      knows: true,
+      certainty: belief.certainty,
+      source: belief.source,
+      why: belief.source === 'witnessed'
+        ? 'they were there'
+        : belief.source === 'inferred'
+          ? 'they had enough to work it out'
+          : 'they were told',
+    };
+  }
+  if (belief.source === 'inferred') {
+    return {
+      knows: false,
+      suspected: true,
+      certainty: belief.certainty,
+      source: 'inferred',
+      why: 'they may have put it together, and there is no way to be sure',
+    };
+  }
+  // A telling that has faded: they do know, the character is just no longer sure
+  // they were the one who said it.
+  return {
+    knows: true,
+    certainty: belief.certainty,
+    source: belief.source,
+    why: 'they were told, though it is hazy whether it was ever actually said',
+  };
+}
+
+/**
  * Memories that must not be spoken freely in front of the people present.
  *
  * This is the operative output: given who is in the room, which of the things
  * the character is about to recall would be a *revelation* rather than a shared
  * reference. It is what stops a character casually mentioning what only they know.
  */
+export interface GuardedTopic {
+  gist: string;
+  hiddenFrom: string[];
+  deliberate: boolean;
+  /**
+   * People who do not know but who had enough to work it out. Still guarded —
+   * a suspicion about somebody's reasoning is not permission to speak — but the
+   * character holds it differently, and the prompt says so.
+   */
+  suspectedBy: string[];
+}
+
 export function guardedTopics(
   tom: TheoryOfMind,
   present: string[],
   recalled: { nodeId: string; gist: string }[],
-): { gist: string; hiddenFrom: string[]; deliberate: boolean }[] {
-  const out: { gist: string; hiddenFrom: string[]; deliberate: boolean }[] = [];
+): GuardedTopic[] {
+  const out: GuardedTopic[] = [];
 
   for (const node of recalled) {
     const hiddenFrom: string[] = [];
+    const suspectedBy: string[] = [];
     let deliberate = false;
     for (const person of present) {
       const verdict = doesKnow(tom, person, { nodeId: node.nodeId, gist: node.gist });
       if (verdict.knows) continue;
-      hiddenFrom.push(tom.minds[person.toLowerCase()]?.displayName ?? person);
+      const name = tom.minds[person.toLowerCase()]?.displayName ?? person;
+      hiddenFrom.push(name);
+      if (verdict.suspected) suspectedBy.push(name);
       if (verdict.source === 'withheld') deliberate = true;
     }
-    if (hiddenFrom.length) out.push({ gist: node.gist, hiddenFrom, deliberate });
+    if (hiddenFrom.length) out.push({ gist: node.gist, hiddenFrom, deliberate, suspectedBy });
   }
   return out;
 }
@@ -350,6 +504,45 @@ export function describeTheoryOfMind(
         + '. Referring to it as shared knowledge would be a mistake they would not make.',
       );
     }
+  }
+
+  /**
+   * The uncertain middle (§3.10).
+   *
+   * Emitted after the guarding lines, because it qualifies them: the thing is
+   * still not to be said, but the character is not sure how much of it the other
+   * person has already assembled. That uncertainty is what makes somebody probe
+   * instead of either confessing or stonewalling.
+   */
+  const suspected = guarded.filter((g) => g.suspectedBy.length).slice(0, 2);
+  if (suspected.length) {
+    lines.push(
+      `${listNames(suspected[0].suspectedBy)} had enough to work out `
+      + suspected.map((g) => truncate(g.gist)).join('; ')
+      + '. They cannot tell whether it has been put together, and that not-knowing '
+      + 'is the point — they probe, they watch, they do not confirm it.',
+    );
+  }
+
+  /**
+   * Told, and no longer sure it was ever said.
+   *
+   * Only surfaced for the people actually present, and only when it is genuinely
+   * hazy. "Did I tell you about…" is the most ordinary sentence in the language
+   * and no companion system says it.
+   */
+  for (const person of present.slice(0, 3)) {
+    const mind = tom.minds[person.toLowerCase()];
+    if (!mind) continue;
+    const hazy = mind.knows
+      .filter((b) => b.source === 'told' && b.certainty < KNOWN_CERTAINTY)
+      .sort((a, b) => a.certainty - b.certainty)[0];
+    if (!hazy) continue;
+    lines.push(
+      `They think they told ${mind.displayName} about ${truncate(hazy.gist)} but genuinely `
+      + 'cannot remember whether they did — they would check rather than assume.',
+    );
+    break;
   }
 
   for (const person of present.slice(0, 3)) {

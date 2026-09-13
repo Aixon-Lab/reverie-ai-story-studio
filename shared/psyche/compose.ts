@@ -34,6 +34,15 @@ export interface PsycheBlockInput {
   beliefs?: string[];
   /** What they expect the people present to do. */
   expectations?: string[];
+  /**
+   * The last time somebody went against what they predicted (`brain/forecast.ts`).
+   *
+   * Distinct from EXPECT above, which is a standing prior. This is a *closed*
+   * prediction the world has already answered, and it is the one line in the
+   * block that can only exist because the character committed to something
+   * before the turn and turned out to be wrong.
+   */
+  surprise?: string;
   /** How they currently take themselves to be (§P.6.2). */
   selfConcept?: string;
   /** How they tell the story of their life so far. */
@@ -42,6 +51,19 @@ export interface PsycheBlockInput {
   tomLines?: string[];
   /** How accommodating they are willing to be (§N.2.3). */
   stance?: string;
+  /**
+   * What happens when the same point is put to them twice (`conviction.ts`).
+   *
+   * Separate from `stance` on purpose: stance is how open they are *now*,
+   * conviction is whether that survives being leaned on. The measured failure in
+   * companion models is the second one, and it is invisible within a single turn.
+   */
+  conviction?: string;
+  /**
+   * A correction when the recent output has slid off the character
+   * (`brain/drift.ts`). Silent when it has not, which is the common case.
+   */
+  drift?: string;
   params: PsycheParams;
 }
 
@@ -118,6 +140,12 @@ export function composePsycheBlock(input: PsycheBlockInput): string {
   if (input.beliefs?.length) {
     lines.push(`BELIEF: they are acting on — ${input.beliefs.slice(0, 3).join('; ')}.`);
   }
+  if (input.surprise) {
+    lines.push(
+      `WRONG-FOOTED: ${input.surprise} They have not caught up with it yet — `
+      + 'let it show as a beat of recalibration, not as commentary.',
+    );
+  }
   if (input.expectations?.length) {
     lines.push(`EXPECT: ${input.expectations.slice(0, 3).join('; ')}.`);
   }
@@ -137,6 +165,14 @@ export function composePsycheBlock(input: PsycheBlockInput): string {
    * cheapest defence available.
    */
   if (input.stance) lines.push(`STANCE: ${input.stance}`);
+  // After stance, because it qualifies it: this is what stance does when leaned on.
+  if (input.conviction) lines.push(input.conviction);
+  /**
+   * Last, and deliberately so. Everything above describes who the character is;
+   * this describes what the writing has actually been doing, and it should be
+   * the most recent thing in mind when the next turn is written.
+   */
+  if (input.drift) lines.push(input.drift);
 
   // --- how they habitually cope ---------------------------------------------
   if (psyche.copingHistory.length >= 6) {

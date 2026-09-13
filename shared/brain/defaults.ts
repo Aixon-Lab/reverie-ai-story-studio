@@ -163,6 +163,64 @@ function stripSelfRelation(
   return out;
 }
 
+/**
+ * Labels a stored brain may have filed as a person, but never was.
+ *
+ * Deliberately narrower than the encode-time list in `entities.ts`. That one runs
+ * with the cast in hand and can tell a narrating voice from a character who
+ * happens to be called Scene; this one runs blind on every load, so it only
+ * removes names that cannot plausibly belong to somebody in a story.
+ */
+const RESERVED_NON_PEOPLE = new Set([
+  'narrator', 'the narrator', 'narration', 'narrative', 'storyteller', 'system',
+]);
+
+/**
+ * Drop relationships with the narrating voice, and unfile it as an actor.
+ *
+ * Narration arrives in the transcript with a speaker label like any other turn,
+ * so until the encoders learned to ignore it, "Narrator" was read as somebody in
+ * the room: it entered the cast, became an actor on encoded memories, and grew a
+ * full `RelationModel`. The People list then showed trust, fear and resentment
+ * toward the story's own voice — a bond with nobody. The writes are fixed at
+ * source; this clears what those passes already wrote.
+ *
+ * Safe to run every load: the names are reserved, and a character actually named
+ * one of them is protected by the `self` check.
+ */
+function stripNarratorTraces(
+  raw: Partial<BrainState>,
+  people: BrainState['people'],
+  characterName: string,
+): BrainState['people'] {
+  const self = characterName.trim().toLowerCase();
+  const reserved = (name: string) => {
+    const key = (name ?? '').trim().toLowerCase();
+    return !!key && key !== self && RESERVED_NON_PEOPLE.has(key);
+  };
+
+  const out: BrainState['people'] = {};
+  for (const [key, rel] of Object.entries(people)) {
+    if (reserved(key) || reserved(rel.displayName ?? '')) continue;
+    out[key] = rel;
+  }
+
+  for (const node of Object.values(raw.nodes ?? {})) {
+    if (node.actors?.some(reserved)) node.actors = node.actors.filter((a) => !reserved(a));
+  }
+  if (raw.working) {
+    for (const slot of raw.working) {
+      if (slot.actors?.some(reserved)) slot.actors = slot.actors.filter((a) => !reserved(a));
+    }
+  }
+  if (raw.aliases) {
+    for (const [alias, canonical] of Object.entries(raw.aliases)) {
+      if (reserved(alias) || reserved(canonical)) delete raw.aliases[alias];
+    }
+  }
+  return out;
+}
+
 function migrateParams(stored?: Partial<BrainParams>): BrainParams {
   const params: BrainParams = { ...DEFAULT_PARAMS, ...(stored ?? {}) };
   for (const [key, legacy] of Object.entries(SUPERSEDED_PARAMS) as [keyof BrainParams, number[]][]) {
@@ -202,7 +260,11 @@ export function normalizeBrain(
     // Strip any self-relation an older pass recorded. A character listing
     // themselves among the people they know is always a bug, and it is cheaper to
     // heal on load than to leave in every brain already on disk.
-    people: stripSelfRelation(raw.people, raw.characterName || characterName),
+    people: stripNarratorTraces(
+      raw,
+      stripSelfRelation(raw.people, raw.characterName || characterName),
+      raw.characterName || characterName,
+    ),
     chapters: raw.chapters ?? [],
     working: raw.working ?? [],
     aliases: raw.aliases ?? {},

@@ -16,6 +16,7 @@ import {
   BASELINE, contrastTerm, gainsOf, modulatorsOf,
   type CognitivePhase, type ModulatoryGains,
 } from './neuromodulation';
+import { maturationTerm } from './maturation';
 import { reconstructOnRecall } from './reconstruction';
 import { DEFAULT_SYNAPSE, ensureSynapse, recordSynapticUse, relaxSynapse, stpTerm } from './synapse';
 import type {
@@ -125,8 +126,21 @@ export function activationOf(
    * during ranking must not itself count as using it.
    */
   const availability = stpTerm(node, cue.now);
+  /**
+   * Blur and settling — the two forgetting mechanisms that are not decay.
+   *
+   * Both are read, never computed, here. `interference` is a scalar the
+   * consolidation pass wrote after comparing this memory with its near-twins,
+   * because doing that pairwise on the hot path would be O(n²) per turn.
+   * `maturationTerm` is arithmetic over one stored pass number. Both are exactly
+   * zero in the ordinary case — a distinct, settled memory — so a graph that has
+   * neither near-duplicates nor fresh traces scores precisely as it always did.
+   */
+  const interference = -(node.interference ?? 0);
+  const maturation = maturationTerm(node, brain);
 
-  const total = base + spreading + partialMatch + boost + suppression + congruence + availability + noise;
+  const total = base + spreading + partialMatch + boost + suppression + congruence
+    + availability + interference + maturation + noise;
   return {
     base,
     spreading,
@@ -136,6 +150,8 @@ export function activationOf(
     moodCongruence: congruence,
     noise,
     availability,
+    interference,
+    maturation,
     total,
   };
 }
@@ -220,7 +236,7 @@ export function recall(
     applyRetrievalEffects(brain, hits, competitors, cue.now, index, rng);
   }
 
-  return { hits, competitors, cue };
+  return { hits, competitors, cue, index };
 }
 
 /**

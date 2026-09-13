@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyBrain } from './defaults';
 import { ensureRelation } from './personality';
 import {
-  canonicalizeActors, isPronoun, learnPerson, registerAlias, resolvePerson,
+  canonicalizeActors, isNonPerson, isPronoun, learnAliasGroups, learnPerson,
+  registerAlias, resolvePerson,
 } from './entities';
 
 const T0 = 1_700_000_000_000;
@@ -60,5 +61,42 @@ describe('entity canonicalisation (§B.2 #33)', () => {
     expect(actors.some((a) => /wren|vale/i.test(a))).toBe(true);
     expect(actors.some((a) => a.toLowerCase() === 'she')).toBe(false);
     expect(actors).toContain('Rooke');
+  });
+});
+
+/**
+ * The narrator is a camera, not a cast member.
+ *
+ * Narration reaches the encoders with a speaker label like any other turn, so
+ * "Narrator" used to be canonicalised as a person: it became an actor on encoded
+ * memories and grew a full relationship record, and the People list showed trust
+ * and resentment toward the voice telling the story.
+ */
+describe('a narrating voice is never a person', () => {
+  it('recognises the labels a story voice speaks under', () => {
+    expect(isNonPerson('Narrator')).toBe(true);
+    expect(isNonPerson('the narrator')).toBe(true);
+    expect(isNonPerson('Storyteller')).toBe(true);
+    expect(isNonPerson('System')).toBe(true);
+    expect(isNonPerson('Wren')).toBe(false);
+  });
+
+  it('yields to the cast — a character actually called that is still a person', () => {
+    expect(isNonPerson('Scene', ['Scene', 'Wren'])).toBe(false);
+    expect(isNonPerson('Narrator', ['Wren'])).toBe(true);
+  });
+
+  it('drops the narrator from an actor list and keeps everyone real', () => {
+    const b = emptyBrain('c', 'x', 'Seraphina', T0);
+    const actors = canonicalizeActors(b, ['Narrator', 'Rooke', 'the story'], ['Seraphina', 'Rooke']);
+    expect(actors).toEqual(['Rooke']);
+    expect(b.people.narrator).toBeUndefined();
+  });
+
+  it('refuses to alias a real person onto the narrator', () => {
+    const b = emptyBrain('c', 'x', 'Seraphina', T0);
+    learnAliasGroups(b, [{ canonical: 'Narrator', also: ['Rooke'] }], ['Seraphina', 'Rooke']);
+    expect(resolvePerson(b, 'Rooke')).toBe('rooke');
+    expect(b.aliases?.rooke).toBeUndefined();
   });
 });

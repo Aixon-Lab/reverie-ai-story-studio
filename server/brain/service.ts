@@ -17,9 +17,11 @@ import {
 import { consolidate } from '../../shared/brain/consolidation';
 import { composeBrainContext, brainDemandTokens } from '../../shared/brain/compose';
 import { cueFromContext, recall, applyRetrievalEffects } from '../../shared/brain/retrieval';
+import { formForecast } from '../../shared/brain/forecast';
+import { measureDrift } from '../../shared/brain/drift';
 import { planContext, estimateBrainTokens, type ContextPlan } from '../../shared/brain/budget';
 import { dispositionFromText, normalizeTraits } from '../../shared/brain/personality';
-import { heuristicEncode, type TranscriptTurn } from '../../shared/brain/heuristics';
+import { heuristicEncode, turnLine, type TranscriptTurn } from '../../shared/brain/heuristics';
 import { clamp01, clampSigned } from '../../shared/brain/activation';
 import {
   formIntention, setSteer, spendIntention, spendSteer, ttlFromIntensity,
@@ -41,9 +43,9 @@ import { appendAudit, loadBrain, loadBrainIfExists, saveBrain, summarizeReport, 
 import type { BrainConfigFields } from '../../shared/brain/config';
 import { advancePsyche, readIdentity } from './psycheStep';
 import {
-  DEFAULT_PSYCHE_PARAMS, actionTendency, checkIntrusions, composePsycheBlock,
-  computeStance, describeBond, describeLifeStory, describeSelfConcept,
-  describeTheoryOfMind, express, guardedTopics,
+  DEFAULT_PSYCHE_PARAMS, actionTendency, assessConviction, checkIntrusions,
+  composePsycheBlock, computeStance, describeBond, describeLifeStory,
+  describeSelfConcept, describeTheoryOfMind, express, guardedTopics,
 } from '../../shared/psyche';
 
 /**
@@ -428,6 +430,12 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
         speaker: m.speaker.displayName,
         text: m.text,
         isUser: m.speaker.type === 'user' || m.controlledBy === 'human',
+        /**
+         * Narration is story, not a participant. Kept in the transcript — it is
+         * where place, time and consequence are written — but stripped of its
+         * speaker label, so neither encoder can file "Narrator" as a person.
+         */
+        isNarration: m.speaker.type === 'narrator' || m.speaker.type === 'system',
       }));
 
     if (!turns.length) {
@@ -436,7 +444,7 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
       return { brain, report: null, encoder: 'none', consumed: fresh.length, reason: 'no usable turns' };
     }
 
-    const transcript = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
+    const transcript = turns.map(turnLine).join('\n');
     const candidates = candidateNodes(brain);
 
     let events: AppraisedEvent[] = [];
@@ -671,6 +679,17 @@ export interface BrainContextResult {
  * No model call. Cost is one graph pass per participating character, which is
  * milliseconds even at thousands of nodes.
  */
+/**
+ * Is this message the story's voice rather than somebody in it?
+ *
+ * Narration reaches memory as text worth keeping and a speaker worth ignoring.
+ * Every place that renders history for the brain has to agree on that, or the
+ * name "Narrator" leaks back in as a person through whichever path forgot.
+ */
+function isNarrationTurn(m: { speaker: { type: string } }): boolean {
+  return m.speaker.type === 'narrator' || m.speaker.type === 'system';
+}
+
 export async function buildBrainContext(input: BrainContextInput): Promise<BrainContextResult | null> {
   /**
    * A brain with no memories can still have a *state*: exhausted, frightened,
@@ -707,7 +726,7 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
   const recentText = input.history
     .filter((m) => !m.hiddenFromPrompt)
     .slice(-8)
-    .map((m) => `${m.speaker.displayName}: ${m.text}`)
+    .map((m) => (isNarrationTurn(m) ? `[narration] ${m.text}` : `${m.speaker.displayName}: ${m.text}`))
     .join('\n');
 
   // Split the budget across participating brains, weighted by how much each wants.
@@ -739,7 +758,11 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
     holdRecentTurns(
       entry.brain,
       input.history.filter((m) => !m.hiddenFromPrompt && m.text?.trim()).slice(-8)
-        .map((m) => ({ speaker: m.speaker.displayName, text: m.text })),
+        .map((m) => ({
+          speaker: m.speaker.displayName,
+          text: m.text,
+          isNarration: isNarrationTurn(m),
+        })),
       now,
       () => randomUUID(),
     );
@@ -748,6 +771,22 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
       now,
       makeId: () => randomUUID(),
     });
+
+    /**
+     * Commit to a prediction (`forecast.ts`).
+     *
+     * After the intention, because what they are trying to do is half of what
+     * they expect to happen. Only replaced once the standing one has been spent
+     * or has lapsed: re-predicting every turn would mean the character was never
+     * actually exposed on a call, and a prediction nothing can falsify is not a
+     * prediction.
+     */
+    if (!entry.brain.forecast) {
+      entry.brain.forecast = formForecast(entry.brain, {
+        present: input.cast.filter((c) => c !== entry.card.name),
+        now,
+      }) ?? undefined;
+    }
 
     const cue = cueFromContext({
       recentText,
@@ -775,6 +814,23 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
       input.cast,
       now,
       result.hits.slice(0, 12).map((h) => h.node.id),
+      /**
+       * Everyone except this character. In a group that is the rest of the cast
+       * as well as the human — being worn down by a room is the same mechanism
+       * as being worn down by one person, and often the more forceful one.
+       */
+      input.history
+        .filter((m) => !m.hiddenFromPrompt && m.text?.trim()
+          && m.speaker.displayName !== entry.card.name
+          && !isNarrationTurn(m))
+        .slice(-6)
+        .map((m) => m.text),
+      // …and this character's own turns, which is the drift sample.
+      input.history
+        .filter((m) => !m.hiddenFromPrompt && m.text?.trim()
+          && m.speaker.displayName === entry.card.name)
+        .slice(-4)
+        .map((m) => m.text),
     );
     const stateTokens = state ? estimateBrainTokens(state) + 4 : 0;
 
@@ -789,7 +845,16 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
 
     // Only what actually reached the prompt counts as retrieved (§7.4).
     const usedHits = result.hits.filter((h) => composed.includedIds.includes(h.node.id));
-    applyRetrievalEffects(entry.brain, usedHits, result.competitors, now);
+    /**
+     * The index goes back in deliberately.
+     *
+     * `applyRetrievalEffects` guards its facilitation pass on having one, so
+     * calling it without an index quietly drops the priming half of retrieval
+     * competition: neighbours of what just fired were never lifted, and recall
+     * could only ever suppress. Reusing the index `recall` already built also
+     * means the effects pass costs nothing extra.
+     */
+    applyRetrievalEffects(entry.brain, usedHits, result.competitors, now, result.index);
     holdEvents(entry.brain, usedHits.slice(0, 4).map((h) => ({
       gist: h.node.gist,
       actors: h.node.actors,
@@ -849,6 +914,15 @@ function composeStateBlock(
   now: number,
   /** Node ids actually reaching the prompt this turn — only those can be leaked. */
   recalledIds: string[] = [],
+  /**
+   * What the *other side* has said recently, oldest first.
+   *
+   * Only their turns: conviction measures whether the same point is being put
+   * again, and the character's own replies are not what is doing the pressing.
+   */
+  theirTurns: string[] = [],
+  /** The character's own recent turns, oldest first — the drift sample. */
+  ownTurns: string[] = [],
 ): string {
   const psyche = brain.psyche;
   if (!psyche) return '';
@@ -906,13 +980,45 @@ function composeStateBlock(
     )
     : [];
 
-  // Stance toward whoever is actually in front of them.
-  const speaking = others[0] ? brain.people[others[0].toLowerCase()] : undefined;
+  /**
+   * Stance and conviction toward whoever is actually in front of them.
+   *
+   * Through `resolvePerson`, like every other lookup in this block. A raw
+   * lowercase key misses anybody known under an alias — "Miss Vale" when the
+   * record is filed as "Wren Vale" — and the character then faces the person
+   * they know best as though they had never met, with no relationship to price
+   * either their openness or their willingness to hold a line.
+   */
+  const speaking = others[0]
+    ? brain.people[resolvePerson(brain, others[0])] ?? brain.people[others[0].toLowerCase()]
+    : undefined;
   const stance = computeStance({
     psyche,
     relation: speaking,
     felt: affect.felt,
     intruded: intrusions.length > 0,
+  });
+
+  /**
+   * Whether a position survives being leaned on (`conviction.ts`).
+   *
+   * Silent unless somebody is actually repeating themselves, which is most of
+   * the time.
+   */
+  const conviction = assessConviction({ theirTurns, psyche, relation: speaking });
+
+  /**
+   * Has the writing actually stayed on this character (`brain/drift.ts`)?
+   *
+   * Measured against `affect.shown` rather than `affect.felt`, so a character
+   * who is holding it in is never told off for reading flat — that is the whole
+   * point of the regulation layer and flagging it would fight it.
+   */
+  const drift = measureDrift({
+    ownTurns,
+    shownArousal: affect.shown.arousal,
+    shownValence: affect.shown.valence,
+    openness: stance.openness,
   });
 
   return composePsycheBlock({
@@ -924,10 +1030,13 @@ function composeStateBlock(
     intrusions,
     beliefs,
     expectations,
+    surprise: brain.lastSurprise?.note,
     selfConcept: describeSelfConcept(identity.self, brain.characterName),
     lifeStory: identity.arcs.length >= 2 ? describeLifeStory(identity.arcs) : '',
     tomLines,
     stance: stance.line,
+    conviction: conviction.line,
+    drift: drift.line,
     params: DEFAULT_PSYCHE_PARAMS,
   });
 }

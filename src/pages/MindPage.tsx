@@ -22,14 +22,16 @@ import {
   type BrainNodeDetail, type BrainRecallHit, type BrainSummary, type ModelLimits,
 } from '../api';
 import { BrainJobProgress } from '../components/BrainJobProgress';
+import { PsycheColumns } from '../components/PsycheColumns';
 import { IconAi } from '../components/Icons';
 import { GlobeLoader } from '../components/GlobeLoader';
 import { useApp } from '../store';
 import { Avatar } from '../components/Avatar';
 import { MemoryGraph, MEMORY_EDGE_COLORS } from '../components/MemoryGraph';
 import { useConfirm } from '../components/ConfirmDialog';
+import { LearnedSkillsPanel } from '../components/LearnedSkillsPanel';
 
-type Tab = 'network' | 'psyche' | 'story' | 'log';
+type Tab = 'network' | 'psyche' | 'story' | 'learning' | 'log';
 
 const KIND_LABEL: Record<string, string> = {
   episodic: 'Episodes',
@@ -283,7 +285,7 @@ export function MindPage() {
     );
   }
 
-  const isEmpty = !graph || graph.nodes.length === 0;
+  const isEmpty = !graph || (graph.nodes.length === 0 && !graph.learnedSkills?.length);
   const chatTitle = graph?.chatTitle || chat?.title || 'this conversation';
   const name = graph?.characterName ?? card?.name ?? characterId;
   /**
@@ -328,6 +330,7 @@ export function MindPage() {
             ['network', 'Network', Network],
             ['psyche', 'Psyche', Brain],
             ['story', 'Story', Clock],
+            ['learning', 'Learned skills', Activity],
             ['log', 'Log', ScrollText],
           ] as [Tab, string, typeof Brain][]).map(([id, label, Icon]) => (
             <button
@@ -354,7 +357,7 @@ export function MindPage() {
         </div>
       )}
 
-      {isEmpty && (
+      {isEmpty && tab !== 'learning' && (
         <div className="mind-empty">
           <Brain size={32} strokeWidth={1.4} />
           {/* While a run is going this is not an empty mind, it is a mind mid-read. */}
@@ -575,6 +578,12 @@ export function MindPage() {
         />
       )}
 
+      {graph && tab === 'learning' && <LearnedSkillsPanel techniques={graph.learnedSkills ?? []}
+        characterName={name} onMute={async (id, muted) => {
+          if (!chatId || !characterId) return;
+          await api.brain.muteTechnique(chatId, characterId, id, muted);
+          await load();
+        }} />}
       {graph && !isEmpty && tab === 'log' && <LogView entries={audit} />}
     </div>
   );
@@ -1012,7 +1021,7 @@ function ConditionPanel({ graph }: { graph: BrainGraph }) {
   const p = graph.psyche;
   if (!p) {
     return (
-      <section className="panel mind-panel">
+      <section className="panel mind-panel" tabIndex={0} aria-label="State of mind">
         <h2 className="t-label">State of mind</h2>
         <p className="t-caption">
           Nothing yet — this mind was created before the psyche layer existed. It starts
@@ -1043,7 +1052,7 @@ function ConditionPanel({ graph }: { graph: BrainGraph }) {
   };
 
   return (
-    <section className="panel mind-panel">
+    <section className="panel mind-panel" tabIndex={0} aria-label="State of mind">
       <h2 className="t-label">State of mind</h2>
 
       {graph.condition.length > 0 ? (
@@ -1131,11 +1140,12 @@ function PsycheView({
 }) {
   return (
     <div className="mind-psyche">
+      <PsycheColumns>
       <ConditionPanel graph={graph} />
 
       {(graph.intention || graph.steer || graph.forecast || graph.lastSurprise
         || (graph.working && graph.working.length > 0)) && (
-        <section className="panel mind-panel">
+        <section className="panel mind-panel" tabIndex={0} aria-label="What they want in this scene">
           <h2 className="t-label">What they want in this scene</h2>
           {graph.intention ? (
             <div className="mind-intention">
@@ -1199,7 +1209,7 @@ function PsycheView({
         </section>
       )}
 
-      <section className="panel mind-panel">
+      <section className="panel mind-panel" tabIndex={0} aria-label="Temperament">
         <h2 className="t-label">Temperament</h2>
         {graph.dispositionSource !== 'model' && (
           <div className="mind-repair">
@@ -1272,7 +1282,7 @@ function PsycheView({
         </div>
       </section>
 
-      <section className="panel mind-panel">
+      <section className="panel mind-panel" tabIndex={0} aria-label="Working self">
         <h2 className="t-label">Working self</h2>
         <p className="t-caption">Active goals gate what they notice and what comes back to them.</p>
         {graph.workingSelf.goals.filter((g) => g.status === 'active').length === 0 && (
@@ -1303,7 +1313,7 @@ function PsycheView({
         )}
       </section>
 
-      <section className="panel mind-panel">
+      <section className="panel mind-panel" tabIndex={0} aria-label="People">
         <h2 className="t-label"><Users size={14} /> People</h2>
         {graph.people.length === 0 && <p className="t-caption">They have not formed a view of anyone yet.</p>}
         <div className="mind-people">
@@ -1340,7 +1350,7 @@ function PsycheView({
         </div>
       </section>
 
-      <section className="panel mind-panel">
+      <section className="panel mind-panel" tabIndex={0} aria-label="How memory behaves">
         <h2 className="t-label">How memory behaves</h2>
         <p className="t-caption">These settings apply to this character in this conversation only.</p>
         <BudgetPanel graph={graph} limits={limits} onChange={onChange} />
@@ -1399,6 +1409,7 @@ function PsycheView({
           </button>
         </div>
       </section>
+      </PsycheColumns>
     </div>
   );
 }

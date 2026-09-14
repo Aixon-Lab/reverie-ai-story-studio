@@ -8,6 +8,7 @@
  * the human ratio the dossier describes.
  */
 import { emptyPsyche, normalizePsyche } from '../psyche/defaults';
+import { normalizeLearning } from './learning';
 import type {
   Affect, BrainConfig, BrainParams, BrainState, TraitAxis, TraitVector,
 } from './types';
@@ -256,6 +257,7 @@ export function normalizeBrain(
       concerns: raw.workingSelf?.concerns ?? [],
     },
     nodes: raw.nodes ?? {},
+    learnedSkills: normalizeLearning(raw.learnedSkills),
     edges: raw.edges ?? [],
     // Strip any self-relation an older pass recorded. A character listing
     // themselves among the people they know is always a bug, and it is cheaper to

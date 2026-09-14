@@ -1,7 +1,7 @@
 /** Geometry for the Reverie desk orb — edge snap, no center rest, no top edge. */
 
 export const ORB_FLOAT = 44;
-export const ORB_DOCKED = 28;
+export const ORB_DOCKED = 34;
 export const EDGE_PAD = 10;
 export const DRAG_THRESHOLD = 7;
 

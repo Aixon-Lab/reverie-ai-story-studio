@@ -368,6 +368,8 @@ export const api = {
       http<BrainGraph['config']>('PATCH', `${brainBase(chatId, characterId)}/config`, patch),
     patchNode: (chatId: string, characterId: string, nodeId: string, patch: Record<string, unknown>) =>
       http<unknown>('PATCH', `${brainBase(chatId, characterId)}/nodes/${nodeId}`, patch),
+    muteTechnique: (chatId: string, characterId: string, techniqueId: string, muted: boolean) =>
+      http<unknown>('PATCH', `${brainBase(chatId, characterId)}/learning/${encodeURIComponent(techniqueId)}`, { muted }),
     audit: (chatId: string, characterId: string, limit = 80) =>
       http<BrainAuditEntry[]>('GET', `${brainBase(chatId, characterId)}/audit?limit=${limit}`),
     /**
@@ -505,6 +507,7 @@ export interface BrainAffect {
 }
 
 export interface BrainGraph {
+  learnedSkills: import('../shared/brain/learning').LearnedTechnique[];
   chatId: string;
   chatTitle: string;
   characterId: string;

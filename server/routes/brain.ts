@@ -15,6 +15,7 @@ import { maturity } from '../../shared/brain/maturation';
 import { forecastAccuracy } from '../../shared/brain/forecast';
 import { setSteer, ttlFromIntensity, type IntentionKind } from '../../shared/brain/volition';
 import { liveWorking } from '../../shared/brain/working';
+import { reconcileLearning } from '../../shared/brain/learning';
 import { describeWarrant } from '../../shared/brain/warrant';
 import { planContext, estimateBrainTokens } from '../../shared/brain/budget';
 import { planChunks, transcriptBudget } from '../../shared/brain/chunking';
@@ -43,6 +44,19 @@ import {
 } from '../../shared/psyche';
 
 export const brainRoutes = Router();
+
+brainRoutes.patch('/brains/:chatId/:characterId/learning/:techniqueId', async (req, res) => {
+  if (typeof req.body?.muted !== 'boolean') return res.status(400).json({ error: 'muted must be a boolean' });
+  const { chatId, characterId, techniqueId } = req.params;
+  await withBrainLock(chatId, characterId, async () => {
+    const brain = await loadBrainIfExists(chatId, characterId);
+    const technique = brain?.learnedSkills?.find(t => t.id === techniqueId);
+    if (!brain || !technique) { res.status(404).json({ error: 'Technique not found' }); return; }
+    technique.muted = req.body.muted;
+    await saveBrain(brain);
+    res.json({ id: technique.id, muted: technique.muted });
+  });
+});
 
 /**
  * Messages one pass may read, whatever the token budget allows. A chunk is meant
@@ -370,6 +384,7 @@ brainRoutes.get('/brains/:chatId/:characterId/graph', async (req, res) => {
   const { chatId, characterId } = req.params;
   const card = await loadCharacter(characterId).catch(() => null);
   const brain = await loadBrain(chatId, characterId, card?.name ?? characterId);
+  reconcileLearning(brain, (await loadMessages(chatId)).filter(m => !m.hiddenFromPrompt && m.text?.trim()));
   const now = Date.now();
   const p = brain.config.params;
   const index = buildIndex(brain);
@@ -436,6 +451,7 @@ brainRoutes.get('/brains/:chatId/:characterId/graph', async (req, res) => {
     characterId: brain.characterId,
     characterName: brain.characterName,
     nodes,
+    learnedSkills: brain.learnedSkills ?? [],
     edges: brain.edges,
     chapters: brain.chapters,
     people: Object.values(brain.people),

@@ -95,6 +95,11 @@ npm run build && npm start    # UI + API together on :6969
 
 ## Character Brain
 
+Characters also learn precise techniques from their experiences within each chat.
+**Mind → Learned skills** shows lessons, practice, outcomes, and corrections with
+their source evidence. See [Memory and learning](MEMORY-LEARNING.md) for the design,
+cost controls, and verification limits.
+
 > Each character carries a **mind**, not a sticky note.
 
 One brain per `(chat × character)`. Same card, different chat → different person. Delete the chat → those minds go with it. In groups, each member encodes **only what they witnessed**.

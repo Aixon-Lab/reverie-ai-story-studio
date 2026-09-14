@@ -1,0 +1,17 @@
+.pinboard { display: flex; flex-direction: column; background: var(--surface-0); outline: none; }
+.pinboard:focus-within, .pinboard.is-drag-over { border-color: var(--accent); }
+.pinboard-bar { height: 44px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--hairline); }
+.pinboard-bar > span { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.pinboard-bar .icon-btn { width: 30px; height: 30px; min-width: 30px; padding: 0; }
+.pinboard-image { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pinboard-image > img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.pinboard-empty { text-align: center; padding: 16px; color: var(--ink-muted); }
+.pinboard-empty > svg { margin: auto; }
+.pinboard-empty p { margin: 10px 0; }
+.pinboard-error { position: absolute; bottom: 20px; left: 8px; right: 8px; margin: 0; padding: 8px; border: 1px solid var(--hairline-strong); border-radius: 8px; background: var(--surface-0); color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.pinboard .portrait-float-resize { border: 0; border-radius: 0; padding: 0; }
+.btn.pinboard-toggle { width: 34px; height: 34px; min-width: 34px; padding: 0; flex: none; border-radius: 50%; justify-content: center; }
+.top-bar-pins { display: flex; align-items: center; gap: inherit; flex: none; }
+.top-bar-pins .reverie-dock { width: 34px; height: 34px; border-style: solid; border-color: var(--hairline-strong); }
+.top-bar-pins .reverie-dock.is-occupied { border-color: transparent; }
+.reverie-layer .reverie-orb.is-docked .reverie-orb-ring { background: transparent; border-color: var(--hairline-strong); box-shadow: none; }

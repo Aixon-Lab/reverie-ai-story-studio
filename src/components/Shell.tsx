@@ -7,6 +7,7 @@ import { api } from '../api';
 import { Avatar } from './Avatar';
 import { DrawerHost } from './drawers/DrawerHost';
 import { PortraitFloat } from './PortraitFloat';
+import { Pinboard } from './Pinboard';
 import { ReverieOrb } from './ReverieOrb';
 import { SoftReveal } from './SoftReveal';
 import {
@@ -569,6 +570,16 @@ function TopBar() {
       <BrandLogo size="md" />
       <span style={{ flex: 1 }} />
 
+      <div className="top-bar-pins">
+        <div
+          id="reverie-dock"
+          className="reverie-dock is-occupied"
+          title="Ask Reverie"
+          aria-hidden="true"
+        />
+        <Pinboard />
+      </div>
+
       {settings && (
         <button
           type="button"
@@ -594,13 +605,6 @@ function TopBar() {
           </span>
         </button>
       )}
-
-      <div
-        id="reverie-dock"
-        className="reverie-dock is-occupied"
-        title="Ask Reverie"
-        aria-hidden="true"
-      />
 
       {settings && (
         <button

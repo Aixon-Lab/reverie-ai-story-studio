@@ -10,7 +10,6 @@ import { IconAi, IconClose } from './Icons';
 import { streamAssistant } from '../api';
 import {
   clampDrag,
-  defaultUndock,
   dockedOrigin,
   DRAG_THRESHOLD,
   hitDock,
@@ -80,7 +79,6 @@ export function ReverieOrb() {
     sx: number;
     sy: number;
     moved: boolean;
-    fromDock: boolean;
   } | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,8 +92,11 @@ export function ReverieOrb() {
 
   const measureDock = useCallback(() => {
     const el = document.getElementById('reverie-dock');
-    if (!el) return;
-    setDockRect(el.getBoundingClientRect());
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    setDockRect(previous => previous && previous.left === rect.left && previous.top === rect.top
+      && previous.width === rect.width && previous.height === rect.height ? previous : rect);
+    return rect;
   }, []);
 
   useLayoutEffect(() => {
@@ -103,8 +104,17 @@ export function ReverieOrb() {
     const el = document.getElementById('reverie-dock');
     if (!el) return;
     const ro = new ResizeObserver(() => measureDock());
-    ro.observe(el);
-    return () => ro.disconnect();
+    const bar = el.closest('header') ?? el.parentElement!;
+    const observe = () => {
+      ro.disconnect();
+      ro.observe(bar);
+      Array.from(bar.children).forEach(child => ro.observe(child));
+      measureDock();
+    };
+    observe();
+    const mutations = new MutationObserver(observe);
+    mutations.observe(bar, { childList: true, subtree: true, characterData: true });
+    return () => { ro.disconnect(); mutations.disconnect(); };
   }, [measureDock]);
 
   useEffect(() => {
@@ -206,37 +216,36 @@ export function ReverieOrb() {
 
     // A click is not a dock drop — otherwise tapping the parked orb would
     // immediately re-dock and never open.
-    if (session.moved && dockRect && hitDock(clientX, clientY, dockRect)) {
+    const finalPos = clampDrag(session.sx + clientX - session.ox, session.sy + clientY - session.oy, vw, vh, ORB_FLOAT);
+    const cx = finalPos.x + ORB_FLOAT / 2;
+    const cy = finalPos.y + ORB_FLOAT / 2;
+    const currentDock = measureDock();
+    if (session.moved && currentDock && hitDock(cx, cy, currentDock)) {
       setChrome((c) => ({ ...c, docked: true }));
       setOpen(false);
-      return;
-    }
-    if (!session.moved && session.fromDock) {
-      const d = defaultUndock(vw, vh, ORB_FLOAT);
-      undockTo(d.edge, d.t);
-      setOpen(true);
       return;
     }
     if (!session.moved) {
       setOpen((v) => !v);
       return;
     }
-    const snap = snapFromPoint(clientX, clientY, vw, vh, ORB_FLOAT);
+    const snap = snapFromPoint(cx, cy, vw, vh, ORB_FLOAT);
     undockTo(snap.edge, snap.t);
-  }, [dockRect, undockTo, vw, vh]);
+  }, [measureDock, undockTo, vw, vh]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
+    measureDock();
+    const bounds = e.currentTarget.getBoundingClientRect();
     drag.current = {
       pointerId: e.pointerId,
       ox: e.clientX,
       oy: e.clientY,
-      sx: pos.x,
-      sy: pos.y,
+      sx: bounds.left + (bounds.width - ORB_FLOAT) / 2,
+      sy: bounds.top + (bounds.height - ORB_FLOAT) / 2,
       moved: false,
-      fromDock: chrome.docked,
     };
   };
 
@@ -251,17 +260,22 @@ export function ReverieOrb() {
     setDragging(true);
     const next = clampDrag(session.sx + dx, session.sy + dy, vw, vh, ORB_FLOAT);
     setDragPos(next);
-    setOverDock(!!dockRect && hitDock(e.clientX, e.clientY, dockRect));
+    const currentDock = measureDock();
+    setOverDock(!!currentDock && hitDock(next.x + ORB_FLOAT / 2, next.y + ORB_FLOAT / 2, currentDock));
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (drag.current && e.pointerId !== drag.current.pointerId) return;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     finishDrag(e.clientX, e.clientY);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
 
   const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
-    finishDrag(e.clientX, e.clientY);
+    if (drag.current && e.pointerId !== drag.current.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    setDragPos(null);
+    setOverDock(false);
   };
 
   const stop = useCallback(() => {
@@ -363,6 +377,8 @@ export function ReverieOrb() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onPointerCancel}
+        onClick={e => { if (e.detail === 0) setOpen(v => !v); }}
         initial={false}
         animate={{
           left: pos.x,

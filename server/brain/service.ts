@@ -31,6 +31,7 @@ import { gateChunk } from '../../shared/brain/admission';
 import { holdEvents, holdRecentTurns } from '../../shared/brain/working';
 import { learnAliasGroups, resolvePerson } from '../../shared/brain/entities';
 import { mergeGenerationEffects } from '../../shared/brain/persist';
+import { applyLearning, composeLearning, hasLearningCue, reconcileLearning } from '../../shared/brain/learning';
 import { MAX_BRAIN_SHARE, TRAIT_AXES } from '../../shared/brain/defaults';
 import type {
   AppraisedEvent, BrainState, ConsolidationReport, Goal, MemoryNode,
@@ -405,6 +406,8 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
       return { brain, report: null, encoder: 'none', consumed: 0, reason: 'brain disabled' };
     }
 
+    reconcileLearning(brain, opts.messages.filter(m => !m.hiddenFromPrompt && m.text?.trim()));
+
     const cursor = resolveCursor(brain, opts.chatId, opts.messages);
     if (cursor.repaired) {
       await appendAudit(opts.chatId, opts.card.id, cursorAudit(opts.chatId, cursor));
@@ -444,13 +447,14 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
       return { brain, report: null, encoder: 'none', consumed: fresh.length, reason: 'no usable turns' };
     }
 
-    const transcript = turns.map(turnLine).join('\n');
+    const transcript = turns.map(t => `[id=${t.id}] ${turnLine(t)}`).join('\n');
     const candidates = candidateNodes(brain);
 
     let events: AppraisedEvent[] = [];
     let encoder: ConsolidateOutcome['encoder'] = 'heuristic';
     let goalUpdates: unknown;
     let chapterTitle = '';
+    let learned = 0;
 
     /**
      * Two-band admission (§B.2 #29). Cheap-score the stretch *before* paying
@@ -460,6 +464,7 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
      */
     const cheap = heuristicEncode(turns, opts.card.name);
     const gate = gateChunk(cheap);
+    if (turns.some(t => hasLearningCue(t.text))) gate.action = 'escalate';
 
     const p = brainEncoderPrompt({
       character: cardContext(opts.card),
@@ -528,6 +533,7 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
         ));
         lastRaw = String(raw ?? '');
         const parsed = parseModelJson(raw, 'Brain encoder');
+        learned += applyLearning(brain, pluck(parsed, 'learning'), turns, now, () => randomUUID());
         events = normalizeEvents(extractEvents(parsed), brain);
         // Worth keeping even from an eventless response: the story may have moved
         // on and the goals may have changed regardless.
@@ -535,6 +541,8 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
         chapterTitle = String(pluck(parsed, 'chapterTitle') ?? chapterTitle ?? '').trim();
         if (events.length) encoder = 'model';
         else failure = `returned no usable events (attempt ${attempt + 1})`;
+        // A source-backed lesson can be useful even without an episodic event.
+        if (learned) { encoder = 'model'; break; }
       } catch (err: any) {
         failure = err?.message ?? 'unknown error';
       }
@@ -549,7 +557,10 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
      * decision is the cost saving, and undoing it here would pay in disk
      * writes for events we just agreed were forgettable.
      */
-    if (!events.length && gate.action === 'escalate') {
+    // Learning-only output must not suppress memorable episodes in the same scene.
+    // Reuse the already-computed fallback without spending another provider call.
+    if (!events.length && learned) events = cheap;
+    if (!events.length && !learned && gate.action === 'escalate') {
       events = heuristicEncode(turns, opts.card.name);
       encoder = events.length ? 'heuristic' : 'none';
       await appendAudit(opts.chatId, opts.card.id, {
@@ -610,7 +621,7 @@ export async function runConsolidation(opts: ConsolidateOptions): Promise<Consol
       summary:
         `${encoder} encoder read ${turns.length} turns, proposed ${events.length} event(s) — `
         + summarizeReport(report),
-      detail: { ...report, proposed: events.length, turns: turns.length },
+      detail: { ...report, proposed: events.length, turns: turns.length, learned },
     });
 
     return { brain, report, encoder, consumed: fresh.length };
@@ -699,7 +710,7 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
    * right now matters to the next line more than what they once knew.
    */
   const active = input.brains.filter((b) => b.brain.config.enabled
-    && (Object.keys(b.brain.nodes).length > 0 || hasLivePsyche(b.brain)));
+    && (Object.keys(b.brain.nodes).length > 0 || b.brain.learnedSkills?.length || hasLivePsyche(b.brain)));
   if (!active.length) return null;
 
   const now = input.now ?? Date.now();
@@ -739,6 +750,8 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
   let usedTotal = 0;
 
   active.forEach((entry, i) => {
+    // Edits/deletions invalidate learning before it can reach another reply.
+    reconcileLearning(entry.brain, input.history.filter(m => !m.hiddenFromPrompt && m.text?.trim()));
     const budget = Math.floor((plan.brainBudget * weights[i]) / weightTotal);
     if (budget < 60) return;
 
@@ -833,15 +846,17 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
         .map((m) => m.text),
     );
     const stateTokens = state ? estimateBrainTokens(state) + 4 : 0;
+    const learning = composeLearning(entry.brain, recentText,
+      Math.min(900, Math.floor(Math.max(0, budget - stateTokens) * 0.3)));
 
     const composed = composeBrainContext(entry.brain, result.hits, {
-      budget: Math.max(0, budget - stateTokens),
+      budget: Math.max(0, budget - stateTokens - learning.tokens),
       now,
       presentActors: input.cast,
       countTokens: estimateBrainTokens,
       withHeader: true,
     });
-    if (!composed.text.trim() && !state) return;
+    if (!composed.text.trim() && !state && !learning.text) return;
 
     // Only what actually reached the prompt counts as retrieved (§7.4).
     const usedHits = result.hits.filter((h) => composed.includedIds.includes(h.node.id));
@@ -863,12 +878,12 @@ export async function buildBrainContext(input: BrainContextInput): Promise<Brain
     })), now, () => randomUUID());
     dirty.push(entry.brain);
 
-    blocks.push([state, composed.text].filter(Boolean).join('\n\n'));
-    usedTotal += composed.tokens + stateTokens;
+    blocks.push([state, composed.text, learning.text].filter(Boolean).join('\n\n'));
+    usedTotal += composed.tokens + stateTokens + learning.tokens;
     perCharacter.push({
       characterId: entry.card.id,
       characterName: entry.card.name,
-      tokens: composed.tokens + stateTokens,
+      tokens: composed.tokens + stateTokens + learning.tokens,
       recalled: usedHits.length,
       intrusions: usedHits.filter((h) => h.intrusion).length,
       includedIds: composed.includedIds,

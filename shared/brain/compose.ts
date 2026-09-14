@@ -453,6 +453,7 @@ function lowerFirst(s: string): string {
  */
 export function brainDemandTokens(brain: BrainState, count = estimateBrainTokens): number {
   let total = SECTION_OVERHEAD;
+  if (brain.learnedSkills?.some(t => !t.muted)) total += 900;
 
   /** ~14 tokens of rendering scaffolding per line ("A few days ago: … — it still lands as …"). */
   const lineCost = (n: MemoryNode) =>

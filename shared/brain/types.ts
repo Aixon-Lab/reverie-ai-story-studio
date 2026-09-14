@@ -492,6 +492,8 @@ export interface BrainStats {
 }
 
 export interface BrainState {
+  /** Precise, source-backed techniques learned by this character in this conversation. */
+  learnedSkills?: import('./learning').LearnedTechnique[];
   version: 1;
   /**
    * A brain belongs to one conversation, not to a character in the abstract.
